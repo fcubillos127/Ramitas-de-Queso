@@ -350,19 +350,46 @@ class Red:
         if n_suma is None:
             n_suma = self.n_suma
         size = 2 * cut + 1
-        mat = np.zeros((size, size), dtype=complex)
-        t0 = time.perf_counter()
-        k0_ = self.k0(f, pol)
         a = self.a
         lattice = self.lattice
+
+        # --- Memoización: G0 NO depende de psi ni de los materiales de la
+        #     inclusión; solo de (f, k, pol, cut, n_suma, a, lattice, vel0).
+        #     Esto evita recalcularla, p.ej. al comparar dos valores de psi
+        #     sobre la misma malla de frecuencias. Se usa un caché propio para
+        #     no colisionar con el de G0_cached (que guarda G0_convergente).
+        cache = self.__dict__.setdefault("_cache_G0_plain", {})
+        key = (round(float(f[0]), 12), round(float(f[1]), 12), round(float(k), 12),
+               int(pol), int(cut), int(n_suma), float(a), str(lattice),
+               float(self.vel0[0]), float(self.vel0[1]))
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        k0_ = self.k0(f, pol)
         # Convertir k escalar en vector de Bloch (kx, ky)
         k_vec = sum.K(a, k, lattice)
         Qh_mod, ang = sum.precompute_Qh(a, k_vec, int(n_suma), lattice)
-        
-        # Rellenar la matriz con la suma de red (forma original, sin Toeplitz)
+
+        # --- La matriz es de Toeplitz: S_pre(M, m, ...) depende únicamente de
+        #     la diferencia d = M - m (con la simetría S(-d) = -conj(S(d))).
+        #     Por eso basta calcular 2*cut+1 valores en vez de (2*cut+1)^2.
+        Sd = {}
+        for d in range(0, 2 * cut + 1):
+            Sd[d] = sum.S_pre(d, 0, k0_, Qh_mod, ang, a, lattice)
+        for d in range(1, 2 * cut + 1):
+            Sd[-d] = -np.conj(Sd[d])
+
+        mat = np.empty((size, size), dtype=complex)
         for i in range(-cut, cut + 1):
+            row = i + cut
             for j in range(-cut, cut + 1):
-                mat[i + cut, j + cut] = sum.S_pre(i, j, k0_, Qh_mod, ang, a, lattice)
+                mat[row, j + cut] = Sd[i - j]
+
+        # Cota de memoria del caché (FIFO simple).
+        if len(cache) >= 8192:
+            cache.pop(next(iter(cache)))
+        cache[key] = mat
         return mat
 
     def G0_convergente(self,
@@ -1441,7 +1468,7 @@ class Red:
             def imag_func(x):
                 return np.imag(func(x))
             real_integral = quad(real_func, a, r)
-            imag_integral = quad(real_func, a, r)
+            imag_integral = quad(imag_func, a, r)
             
             return real_integral[0] + 1j*imag_integral[0]
 
@@ -1454,7 +1481,7 @@ class Red:
             def imag_func(x):
                 return np.imag(func(x))
             real_integral = quad(real_func, a, r)
-            imag_integral = quad(real_func, a, r)
+            imag_integral = quad(imag_func, a, r)
             
             return real_integral[0] + 1j*imag_integral[0]
 
@@ -1467,7 +1494,7 @@ class Red:
             def imag_func(x):
                 return np.imag(func(x))
             real_integral = quad(real_func, r, b)
-            imag_integral = quad(real_func, r, b)
+            imag_integral = quad(imag_func, r, b)
             
             return real_integral[0] + 1j*imag_integral[0]
 
@@ -1480,7 +1507,7 @@ class Red:
             def imag_func(x):
                 return np.imag(func(x))
             real_integral = quad(real_func, r, b)
-            imag_integral = quad(real_func, r, b)
+            imag_integral = quad(imag_func, r, b)
             
             return real_integral[0] + 1j*imag_integral[0]
         
@@ -1558,8 +1585,14 @@ class Red:
         ALPHA =  D * b**2 * n / (2 * np.pi)  # constante psi
 
         # --- Funciones integrales ---
+        # Nota de optimización: todas estas integrales aparecen SIEMPRE
+        # multiplicadas por ALPHA. Cuando ALPHA == 0 (esto ocurre si psi == 0
+        # o si n == 0) el resultado es 0 exacto, así que se puede evitar la
+        # integración numérica (quad) sin cambiar el valor devuelto.
         def Fnb(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 J1 = jv(n, k0r)
                 return J1*(k0r* jvp(n, k0r)-J1)/(rp**3)
@@ -1572,7 +1605,9 @@ class Red:
             return real_integral[0] + 1j*imag_integral[0]
 
         def Fnc(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 return jv(n, k0r)*(k0r* h1vp(n, k0r)-hankel1(n, k0r))/(rp**3)
             def real_func(x):
@@ -1584,7 +1619,9 @@ class Red:
             return real_integral[0] + 1j*imag_integral[0]
 
         def Vnb(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 return hankel1(-n, k0r)*(k0r* jvp(n, k0r)-jv(n, k0r))/(rp**3)
             def real_func(x):
@@ -1596,7 +1633,9 @@ class Red:
             return real_integral[0] + 1j*imag_integral[0]
 
         def Vnc(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 return hankel1(-n, k0r)*(k0r* h1vp(n, k0r)-hankel1(n, k0r))/(rp**3)
             def real_func(x):
@@ -1606,7 +1645,7 @@ class Red:
             real_integral = quad(real_func, r, b)
             imag_integral = quad(imag_func, r, b)
             return real_integral[0] + 1j*imag_integral[0]
-        
+
         # --- Derivadas funciones integrales
         def Fnb_p(r):
             k0r= k0_*r

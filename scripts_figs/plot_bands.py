@@ -51,6 +51,8 @@ def path_order(lattice, k, a):
     return order, d, ticks, labels
 
 
+IMTOL = 0.25   # corte de 'fuga' |Im(mu)| para mostrar una banda
+
 def load(npz):
     d = np.load(npz, allow_pickle=True)
     lattice = str(d["lattice"]); a = float(d["a"]); Ct0 = float(d["Ct0"])
@@ -59,7 +61,11 @@ def load(npz):
     for i in range(len(psis)):
         if ("wn_%d" % i) not in d.files:
             continue
-        out.append((float(psis[i]), np.array(d["k_%d" % i]), np.array(d["wn_%d" % i])))
+        wn = np.array(d["wn_%d" % i]).copy()
+        if ("im_%d" % i) in d.files:            # enmascarar modos demasiado 'de fuga'
+            im = np.array(d["im_%d" % i])
+            wn[im > IMTOL] = np.nan
+        out.append((float(psis[i]), np.array(d["k_%d" % i]), wn))
     return lattice, a, Ct0, out
 
 

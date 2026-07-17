@@ -9,9 +9,61 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from scipy.signal import argrelmin
+from scipy.optimize import linear_sum_assignment
 from Bandas_Tools import Red
 
 CT0 = 295.0
+
+
+def _eig_branches(r, k, wg, eta):
+    """Autovalores de T(w)G0(w,k) rastreados en ramas continuas en w.
+
+    La condicion de banda det(T G0 - I)=0 equivale a que ALGUN autovalor mu_i de
+    T G0 valga 1. Rastrear cada rama y buscar el cruce Re(mu_i)=1 es mucho mas
+    robusto que buscar minimos de |det| (que es el producto de los factores y
+    borra ramas cercanas), y no requiere umbral de magnitud.
+    """
+    nb = 2*r.cut + 1
+    E = np.empty((len(wg), nb), dtype=complex)
+    for j, w in enumerate(wg):
+        f = [w, eta]
+        T = np.array([r._Tn(f, n) for n in range(-r.cut, r.cut+1)], dtype=complex)
+        E[j] = np.linalg.eigvals(np.diag(T) @ r.G0(f, k, 1, r.cut))
+    tr = np.empty_like(E)
+    tr[0] = E[0]
+    for j in range(1, len(wg)):
+        C = np.abs(E[j][None, :] - tr[j-1][:, None])   # coste (prev x cur)
+        ri, ci = linear_sum_assignment(C)
+        order = np.empty(nb, dtype=int); order[ri] = ci
+        tr[j] = E[j][order]
+    return tr
+
+
+def compute_bands_eig(r, nk=100, wmax=1.4, ngrid=900, eta=1e-3, imtol=0.6, maxbands=18):
+    """Bandas por cruce de autovalores Re(mu)=1. Devuelve (k_arr, wn, im):
+    wn (nk, maxbands) frecuencias normalizadas y im la |Im(mu)| en el cruce
+    (medida de 'fuga' del modo, para filtrar despues en el graficado). NaN-padded.
+    imtol aqui solo descarta cruces absurdamente lejanos; el corte fino se hace al plotear."""
+    a = r.a
+    k_arr = np.linspace(0.0, r.k_end, nk)
+    wg = np.linspace(1e-3 * 2*np.pi*CT0/a, wmax * 2*np.pi*CT0/a, ngrid)
+    wn = np.full((nk, maxbands), np.nan)
+    im_out = np.full((nk, maxbands), np.nan)
+    for ik, k in enumerate(k_arr):
+        tr = _eig_branches(r, k, wg, eta)
+        rows = []
+        for i in range(tr.shape[1]):
+            re = np.real(tr[:, i]) - 1.0
+            im = np.imag(tr[:, i])
+            for j in np.nonzero(re[:-1] * re[1:] < 0)[0]:
+                t = re[j] / (re[j] - re[j+1])
+                imv = abs(im[j] + t*(im[j+1] - im[j]))
+                if imv < imtol:
+                    rows.append(((wg[j] + t*(wg[j+1]-wg[j])) * a/(2*np.pi*CT0), imv))
+        rows = sorted(rows)[:maxbands]
+        for b, (w, iv) in enumerate(rows):
+            wn[ik, b] = w; im_out[ik, b] = iv
+    return k_arr, wn, im_out
 
 
 def build_red(lattice, psi, cut=2, nk=90):

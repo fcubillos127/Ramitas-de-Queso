@@ -40,13 +40,6 @@ def createFolder(directory):
     except OSError:
         print ('Error: Creating directory. ' +  directory)
 
-def savefrec(k2, frec, path):
-    count = 0
-    for i in k2:
-        name = path + '/frecuencias' + str(np.around(i,2)) + '.txt'
-        np.savetxt(name, frec[count])
-        count = count + 1
-
 class Red:
     def __init__(self, comp):
         self.a = 1 # Constante de Red (en metros)
@@ -2073,52 +2066,6 @@ class Red:
                 except:
                     print(f"Error al leer {nombre_archivo}")
         self.omega_longitudinal = frec
-
-    # ======= Sigma-min helpers (inside class Red) =======
-    def _w_from_norm(self, w_norm, C_l0):
-        import numpy as np
-        return (float(w_norm) * 2.0 * np.pi * float(C_l0)) / float(self.a)
-
-    def _pick_local_minima(self, x, y, max_peaks):
-        import numpy as np
-        x = np.asarray(x); y = np.asarray(y)
-        idx = []
-        for i in range(1, len(x)-1):
-            if np.isfinite(y[i]) and y[i] < y[i-1] and y[i] < y[i+1]:
-                idx.append(i)
-        idx = sorted(idx, key=lambda i: y[i])
-        return [(x[i], y[i]) for i in idx[:max_peaks]]
-
-    def _bracket_min(self, k, w0, C_l0, halfwidth, w_norm_max):
-        s0 = self._sigma_min_norm(k, w0, C_l0)
-        for fmul in (1.0, 1.5, 2.0, 3.0):
-            a = max(1e-4, w0 - fmul*halfwidth)
-            b = min(w_norm_max, w0 + fmul*halfwidth)
-            sa = self._sigma_min_norm(k, a, C_l0)
-            sb = self._sigma_min_norm(k, b, C_l0)
-            if sa > s0 and sb > s0:
-                return a, b
-        return None
-
-    def _minimize_brent(self, k, a, b, C_l0, tol=1e-4):
-        import numpy as np
-        gr = (np.sqrt(5) - 1) / 2
-        x1 = b - gr*(b - a)
-        x2 = a + gr*(b - a)
-        f1 = self._sigma_min_norm(k, x1, C_l0)
-        f2 = self._sigma_min_norm(k, x2, C_l0)
-        neval = 2
-        while abs(b - a) > tol and neval < int(getattr(self,'max_eval_per_refine',20)):
-            if f1 > f2:
-                a = x1; x1 = x2; f1 = f2
-                x2 = a + gr*(b - a); f2 = self._sigma_min_norm(k, x2, C_l0)
-            else:
-                b = x2; x2 = x1; f2 = f1
-                x1 = b - gr*(b - a); f1 = self._sigma_min_norm(k, x1, C_l0)
-            neval += 1
-        x_star = (a + b) / 2
-        f_star = self._sigma_min_norm(k, x_star, C_l0)
-        return x_star, f_star
 
     def _resolve_k_subset(self, k_indices=None, k_values=None, tol=1e-9):
         """
@@ -4542,37 +4489,5 @@ def smooth_interpolate(
 
 
 
-def smooth_interpolate_bands(frec):
-    """
-    Interpola suavemente valores NaN en frec real.
-        frec: ndarray shape (nk, nbands, 2) con [f_real, f_imag].
-        Devuelve ndarray igual, con:
-          - f_real interpolado donde faltaba,
-          - f_imag original donde existía, 0 donde se interpoló.
-    """
-    nk, nbands,_ = frec.shape
-    frec_out = np.empty_like(frec)
-
-    for b in range(nbands):
-        # Extraer componentes
-        real = frec[:, b, 0]
-        imag = frec[:, b, 1]
-
-        # Serie de parte real
-        serie_real = pd.Series(real)
-        real_interp = serie_real.interpolate(
-            method='linear', limit=1, limit_direction='both'
-        ).values
-
-        # Máscara de valores originales (no NaN en real)
-        mask_orig = ~np.isnan(real)
-
-        # Imag original donde mask_orig, 0 donde no
-        imag_out = np.where(mask_orig, imag, 0.0)
-
-        frec_out[:, b, 0] = real_interp
-        frec_out[:, b, 1] = imag_out
-
-    return frec_out
 
 

@@ -1253,71 +1253,7 @@ class Red:
     
     def plot_Im_vn(self, n, freq, r1, r2):
         return _fnv_plot_Im_vn(self, n, freq, r1, r2)
-        fig, ax = plt.subplots(figsize=(8, 5))
-        mark = [None, 'o', '^']
-        col = ['k', 'r']
-        lines = ['-', '','']
-        def _legend_handles_types(ax):
-            from matplotlib.lines import Line2D
-            return [
-                Line2D([0], [0], color=col[0], label=r'$V_n^{(b)}$'),
-                Line2D([0], [0], color=col[1], label=r'$V_n^{(c)}$'),
-            ]
-    
-        def _legend_handles_labels(ax):
-            from matplotlib.lines import Line2D
-            return [
-                Line2D([0], [0], color='black', marker=None, linestyle='-', label=r'$\omega$'+f'=0.5'),
-                Line2D([0], [0], color='black', marker=mark[1], linestyle='', label=r'$\omega$'+f'=1.0'),
-                Line2D([0], [0], color='black', marker=mark[2], linestyle='', label=r'$\omega$'+f'=1.5'),
-            ]
-        for i, frequency in enumerate(freq):
-            f = [frequency*(2*np.pi*self.vel0[1]), 0.0001]
-            k0_ = self.k0(f,1)
-            def Vnb(r):
-                def func(rp): 
-                    k0r= k0_*rp
-                    return hankel1(-n, k0r)*(k0r* jvp(n, k0r)-jv(n, k0r))/(rp**3)
-                def real_func(x):
-                    return np.real(func(x))
-                def imag_func(x):
-                    return np.imag(func(x))
-                real_integral = quad(real_func, r, r2)
-                imag_integral = quad(imag_func, r, r2)
-                return real_integral[0] + 1j*imag_integral[0]
-    
-            def Vnc(r):
-                def func(rp): 
-                    k0r= k0_*rp
-                    return hankel1(-n, k0r)*(k0r* h1vp(n, k0r)-hankel1(n, k0r))/(rp**3)
-                def real_func(x):
-                    return np.real(func(x))
-                def imag_func(x):
-                    return np.imag(func(x))
-                real_integral = quad(real_func, r, r2)
-                imag_integral = quad(imag_func, r, r2)
-                
-                return real_integral[0] + 1j*imag_integral[0]
-                
-                return imag_integral[0] 
-            pos = np.linspace(r1, r2, 50)
-        
-            vnb = [Vnb(r) for r in pos]
-            vnc = [Vnc(r) for r in pos]
-            
-            ax.plot(pos, np.real(vnb), color = col[0], marker=mark[i], linestyle=lines[i], label=r'$V_n^{(b)}$'+r'$\omega$'+f'={frequency}')
-            ax.plot(pos, np.real(vnc), color = col[1], marker=mark[i], linestyle=lines[i], label=r'$V_n^{(c)}$'+r'$\omega$'+f'={frequency}')
-            
-        handles_types = _legend_handles_types(ax)
-        leg1 = ax.legend(handles=handles_types, loc='lower right')
-        handles_labels = _legend_handles_labels(ax)
-        leg2 = ax.legend(handles=handles_labels, loc='upper right')
-        ax.add_artist(leg1)
-        plt.xlabel(r'r')
-        plt.ylabel(r'Re($V_n$)')
-        plt.title(f'Modo ={n}')
-        return fig, ax
-             
+
     def coeficiente_dispersion_hollow(self, frequency, n):
         """
         Calcula el coeficiente de dispersión T_n = e_n / d_n para el modo angular n

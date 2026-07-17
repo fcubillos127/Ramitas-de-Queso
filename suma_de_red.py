@@ -213,41 +213,6 @@ def S_pre(M, m, k0_, Qh_mod, ang, a, lattice='hx'):
         Sval = -np.conj(Sval)
     return Sval
 
-def generar_malla_2D(a, nk=20, lattice='hx'):
-    """
-    Genera una malla regular de nk x nk puntos dentro de la primera zona de Brillouin (1BZ)
-    utilizando vectores recíprocos definidos por la red 'sq' o 'hx'.
-
-    Devuelve:
-        - k_malla: ndarray de forma (nk, nk, 2), con los vectores k = (kx, ky)
-        - b1, b2: vectores primitivos del espacio recíproco
-    """
-    def Kh(a, k1, k2, lattice='hx'):
-        if lattice == 'sq':
-            vec_1 = [2 * np.pi / a, 0]
-            vec_2 = [0, 2 * np.pi / a]
-        elif lattice == 'hx':
-            vec_1 = [2 * np.pi / a, -(1/np.sqrt(3)) * (2 * np.pi / a)]
-            vec_2 = [2 * np.pi / a, (1/np.sqrt(3)) * (2 * np.pi / a)]
-        else:
-            raise ValueError("Lattice no reconocida.")
-        vec = k1 * np.array(vec_1) + k2 * np.array(vec_2)
-        return np.array(vec)
-
-    b1 = Kh(a, 1, 0, lattice)
-    b2 = Kh(a, 0, 1, lattice)
-
-    u_vals = np.linspace(0, 1, nk, endpoint=False)
-    v_vals = np.linspace(0, 1, nk, endpoint=False)
-
-    k_malla = np.zeros((nk, nk, 2))
-    for i, u in enumerate(u_vals):
-        for j, v in enumerate(v_vals):
-            k_vec = u * b1 + v * b2
-            k_malla[i, j, :] = k_vec
-
-    return k_malla, b1, b2
-
 # NUEVAS VERSIONES DE S Y S1 QUE ACEPTAN k_vec EN VEZ DE SU MÓDULO
 
 def S1_vec(M, m, k_vec, n, a, k0_, lattice='hx'):

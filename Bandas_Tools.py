@@ -737,6 +737,35 @@ class Red:
         return mat, info
 
 
+    def _Tn(self, f, n):
+        """
+        Coeficiente de dispersión T_n con memoización.
+
+        T_n NO depende del vector de Bloch k, sólo de la condición de borde,
+        de psi, de la frecuencia f, del modo n, de la geometría (r1, r2) y de
+        los materiales. Por eso, al barrer k con f fijo (p.ej. al construir la
+        estructura de bandas), basta calcularlo una vez por (f, n) y reutilizarlo.
+        Devuelve exactamente lo mismo que llamar directamente a
+        coeficiente_dispersion_elastic / _hollow.
+        """
+        cache = self.__dict__.setdefault("_cache_Tn", {})
+        key = (str(self.cond_borde), round(float(self.psi), 12),
+               round(float(f[0]), 12), round(float(f[1]), 12), int(n),
+               round(float(self.r1), 15), round(float(self.r2), 15),
+               tuple(round(float(x), 12) for x in self.shear),
+               tuple(round(float(x), 12) for x in self.vel0),
+               tuple(round(float(x), 12) for x in self.vels))
+        val = cache.get(key)
+        if val is None:
+            if self.cond_borde == 'rigid':
+                val = self.coeficiente_dispersion_elastic(f, n)
+            else:
+                val = self.coeficiente_dispersion_hollow(f, n)
+            if len(cache) >= 65536:
+                cache.pop(next(iter(cache)))
+            cache[key] = val
+        return val
+
     def determinant_longitudinal(self, f, k, cut,
                                  use_adaptive_g0=False,
                                  g0_tol=1e-6,
@@ -747,10 +776,7 @@ class Red:
         """ Forma la matriz de transmision y el determinante a calcular """
         cutoff=cut
         size = 2 * cutoff + 1
-        if self.cond_borde=='rigid':
-            T = np.diag(np.array([self.coeficiente_dispersion_elastic(f, n) for n in np.arange(-cutoff,cutoff+1)],dtype=complex))
-        else:
-            T = np.diag(np.array([self.coeficiente_dispersion_hollow(f, n) for n in np.arange(-cutoff,cutoff+1)],dtype=complex))
+        T = np.diag(np.array([self._Tn(f, n) for n in np.arange(-cutoff, cutoff + 1)], dtype=complex))
         #G = self.G0(f, k, 1, cutoff, n_suma)
         if use_adaptive_g0:
             G, ginfo = self.G0_convergente_cached(

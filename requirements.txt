@@ -1,0 +1,6 @@
+# Dependencias para el cálculo de bandas fonónicas (clase Red)
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.6
+pandas>=1.5
+tqdm>=4.60

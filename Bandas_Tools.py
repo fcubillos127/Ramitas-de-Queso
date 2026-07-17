@@ -13,7 +13,7 @@ from scipy.optimize import fsolve, linear_sum_assignment, differential_evolution
 from scipy.signal import find_peaks
 #import Four_Materiales_Tools_prima as SW
 from scipy.integrate import quad
-import Suma_red_A_prima_prueba as sum
+import suma_de_red as sr
 # NUEVOS IMPORTS (fnv)
 from fnv.fnv_store import FNVData, build_fnv_grid as _build_fnv_grid, save_fnv as _save_fnv_npz, load_fnv as _load_fnv_npz
 from fnv.fnv_plot import (
@@ -368,15 +368,15 @@ class Red:
 
         k0_ = self.k0(f, pol)
         # Convertir k escalar en vector de Bloch (kx, ky)
-        k_vec = sum.K(a, k, lattice)
-        Qh_mod, ang = sum.precompute_Qh(a, k_vec, int(n_suma), lattice)
+        k_vec = sr.K(a, k, lattice)
+        Qh_mod, ang = sr.precompute_Qh(a, k_vec, int(n_suma), lattice)
 
         # --- La matriz es de Toeplitz: S_pre(M, m, ...) depende únicamente de
         #     la diferencia d = M - m (con la simetría S(-d) = -conj(S(d))).
         #     Por eso basta calcular 2*cut+1 valores en vez de (2*cut+1)^2.
         Sd = {}
         for d in range(0, 2 * cut + 1):
-            Sd[d] = sum.S_pre(d, 0, k0_, Qh_mod, ang, a, lattice)
+            Sd[d] = sr.S_pre(d, 0, k0_, Qh_mod, ang, a, lattice)
         for d in range(1, 2 * cut + 1):
             Sd[-d] = -np.conj(Sd[d])
 
@@ -399,7 +399,7 @@ class Red:
     ):
         """
         Suma de red adaptativa incremental (anillos |h|_∞ = n).
-        Requiere Suma_red_A_prima_prueba.py con: K, Kh, S1_pre.
+        Requiere suma_de_red.py con: K, Kh, S1_pre.
     
         Parámetros
         ----------
@@ -430,7 +430,7 @@ class Red:
         info : dict  {'n_suma': int, 'err_rel': float, 'converged': bool}
         """
         import numpy as np
-        import Suma_red_A_prima_prueba as sum
+        import suma_de_red as sr
     
         # ---- utilidades internas ----------------------------------------------
         def _ring_pairs(n):
@@ -457,7 +457,7 @@ class Red:
             # Vectores Kh + k_vec
             Q = []
             for (i, j) in pairs:
-                Q.append(sum.Kh(a, i, j, lattice) + k_vec)
+                Q.append(sr.Kh(a, i, j, lattice) + k_vec)
             Q = np.asarray(Q, dtype=float)  # shape (Nr, 2)
             Qh_mod = np.linalg.norm(Q, axis=1)
             ang = np.angle(Q[:, 0] + 1j*Q[:, 1])
@@ -471,7 +471,7 @@ class Red:
         a = float(self.a)
         lattice = getattr(self, 'lattice', 'sq')
         k0_ = self.k0(f, pol)             # típico: k0_ = w / C_l0 (compat.)
-        k_vec = sum.K(a, k, lattice)      # tu generador de Bloch en recíproco
+        k_vec = sr.K(a, k, lattice)      # tu generador de Bloch en recíproco
     
         # Precomputo de constantes por diferencia N = |M-m| (matrices base)
         M_idx = np.arange(-cut, cut+1)
@@ -521,7 +521,7 @@ class Red:
                 if not np.any(mask):
                     continue
                 # llamar una vez S1_pre para este Nu con la Qh del anillo
-                term2_ring = sum.S1_pre(int(Nu), k0_, Qh_mod_ring, ang_ring, a, lattice)
+                term2_ring = sr.S1_pre(int(Nu), k0_, Qh_mod_ring, ang_ring, a, lattice)
                 dS = -(term2_ring) / denom_bessel[mask]
                 # simetría para N0<0
                 dS = np.where(N0[mask] < 0, -np.conj(dS), dS)
@@ -588,11 +588,11 @@ class Red:
             return self._g0_geom_cache[key]
     
         import numpy as np
-        import Suma_red_A_prima_prueba as sum
+        import suma_de_red as sr
     
-        k_vec = sum.K(a, k, lattice)
+        k_vec = sr.K(a, k, lattice)
         pairs = self._ring_pairs(n)
-        Q = np.array([sum.Kh(a, i, j, lattice) + k_vec for (i, j) in pairs], dtype=float)  # (Nr,2)
+        Q = np.array([sr.Kh(a, i, j, lattice) + k_vec for (i, j) in pairs], dtype=float)  # (Nr,2)
         Qh_mod = np.linalg.norm(Q, axis=1)
         ang = np.angle(Q[:, 0] + 1j * Q[:, 1])
     
@@ -635,7 +635,7 @@ class Red:
         """
         import numpy as np
         from scipy.special import hankel1 as hn, jn
-        import Suma_red_A_prima_prueba as sum
+        import suma_de_red as sr
     
         # --- cache resultado (opcional) ---
         a = float(self.a)
@@ -692,7 +692,7 @@ class Red:
                 mask = (N == Nu)
                 if not np.any(mask):
                     continue
-                term2_ring = sum.S1_pre(int(Nu), k0_, Qh_mod_ring, ang_ring, a, lattice)
+                term2_ring = sr.S1_pre(int(Nu), k0_, Qh_mod_ring, ang_ring, a, lattice)
                 dS = -(term2_ring) / denom_bessel[mask]
                 dS = np.where(N0[mask] < 0, -np.conj(dS), dS)
                 mat_inc[mask] = dS

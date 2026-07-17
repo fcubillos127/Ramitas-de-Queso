@@ -1,7 +1,7 @@
 # main.py
 # Script de prueba para la clase Red: genera gráfico del coeficiente de dispersión
 
-from Bandas_Four_Materiales_Tools_prima2_new import Red
+from Bandas_Tools import Red
 import numpy as np
 if __name__ == "__main__":
     # ----------------------------------------------------------

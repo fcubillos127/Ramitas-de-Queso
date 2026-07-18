@@ -62,6 +62,32 @@ Reconstruye el modo desde el vector nulo de `(T·G0 − I)` en el punto M:
 `u_z(r,θ) = Σ_m a_m [J_m(k0 r) + T_m H_m(k0 r)] e^{imθ}`. Las frecuencias objetivo
 están en la lista `targets`.
 
+## 4) Editar a mano las bandas (puente a las herramientas de la clase Red)
+
+Las rutinas de edición del código (`delete_point`, `order_bands_by_continuity_global`,
+`smooth_interpolate_longitudinal`, `graficar_bandas_grid`) operan sobre
+`self.omega_longitudinal`. `bridge_to_omega.py` carga ahí las bandas por
+autovalores (ya con el corte de fuga `imtol`), para partir del punto más limpio:
+
+```python
+from scripts_figs.bridge_to_omega import eig_to_red, red_to_eig_npz
+
+red = eig_to_red("data/bands_sq.npz", psi_index=4, imtol=0.12)  # psi=0.8, corte de fuga
+red.order_bands_by_continuity_global()      # reordena bandas por continuidad
+red.delete_point(i=30, n=5, mode="fullgrid")# borra un espurio (undo: red.restore_deleted())
+red.smooth_interpolate_longitudinal()       # rellena huecos internos
+red.graficar_bandas_grid(ylim=[0, 1.4])     # grafica con el estilo del código
+
+# exportar lo editado y reploteo con segmentos EQUIespaciados:
+red_to_eig_npz(red, "data/bands_sq_edit.npz", psi=0.8)
+# python scripts_figs/plot_bands.py data/bands_sq_edit.npz graphs/bandas_sq_edit
+```
+
+- `IMTOL`/`imtol` (corte `|Im(μ)|`): **≈0.10–0.12** deja las bandas propagantes
+  limpias (ver barrido). Súbelo si quieres conservar más bandas planas de resonancia.
+- Los ejes salen con **tramos de alta simetría equiespaciados** (X-Γ, Γ-M, M-X del
+  mismo ancho), como las figuras del artículo (en `plot_bands.py`).
+
 ## Parámetros físicos (en `bandcalc.build_red`)
 
 ```python

@@ -22,36 +22,41 @@ YHI    = float(sys.argv[4]) if len(sys.argv) > 4 else 1.4
 
 def path_order(lattice, k, a):
     """Devuelve (orden_idx, xcoord, ticks, labels) para el camino convencional.
-    sq: X-Γ-M-X   |   hx: Γ-M-K-Γ.  x = distancia euclidiana real en k."""
+    sq: X-Γ-M-X   |   hx: Γ-M-K-Γ.
+    Cada tramo de alta simetría ocupa el MISMO ancho (segmentos equiespaciados,
+    como en las figuras del artículo): dentro de cada tramo la coordenada x va
+    de i a i+1 según la posición fraccional en k."""
     k = np.asarray(k)
+    pi = np.pi
     if lattice == "sq":
-        segB = np.where((k > np.pi/a - 1e-9) & (k <= 2*np.pi/a + 1e-9))[0]  # Γ->X
-        segA = np.where(k <= np.pi/a + 1e-9)[0]                             # M->Γ
-        segC = np.where(k > 2*np.pi/a - 1e-9)[0]                            # X->M
-        order = np.concatenate([segB[::-1], segA[::-1], segC[::-1]])        # X-Γ-M-X
+        # (indices del tramo, k en x=inicio, k en x=fin)  en orden de display X-Γ-M-X
+        segs = [
+            (np.where((k > pi/a - 1e-9) & (k <= 2*pi/a + 1e-9))[0], 2*pi/a, pi/a),   # X->Γ
+            (np.where(k <= pi/a + 1e-9)[0],                          pi/a,   0.0),    # Γ->M
+            (np.where(k > 2*pi/a - 1e-9)[0],                         3*pi/a, 2*pi/a), # M->X
+        ]
         labels = ["X", "Γ", "M", "X"]
-        bounds = [len(segB), len(segA), len(segC)]
-    else:  # hx : nativo M->K->Γ->M ; queremos Γ-M-K-Γ
-        thirds = 2*np.pi/(3*a)
-        segA = np.where(k <= thirds + 1e-9)[0]                              # M->K
-        segB = np.where((k > thirds - 1e-9) & (k <= 2*np.pi/a + 1e-9))[0]   # K->Γ
-        segC = np.where(k > 2*np.pi/a - 1e-9)[0]                            # Γ->M
-        order = np.concatenate([segC, segA, segB])                         # Γ-M-K-Γ
+    else:  # hx : Γ-M-K-Γ
+        t = 2*pi/(3*a); kend = 2*pi*(1 + 1/np.sqrt(3))/a
+        segs = [
+            (np.where(k > 2*pi/a - 1e-9)[0],                      2*pi/a, kend),   # Γ->M
+            (np.where(k <= t + 1e-9)[0],                          0.0,    t),       # M->K
+            (np.where((k > t - 1e-9) & (k <= 2*pi/a + 1e-9))[0],  t,      2*pi/a),  # K->Γ
+        ]
         labels = ["Γ", "M", "K", "Γ"]
-        bounds = [len(segC), len(segA), len(segB)]
-    # distancia geométrica real en el espacio k a lo largo del orden
-    vecs = np.array([Kvec(a, kk, lattice) for kk in k[order]])
-    d = np.zeros(len(order))
-    d[1:] = np.cumsum(np.linalg.norm(np.diff(vecs, axis=0), axis=1))
-    ticks = [0.0]
-    c = 0
-    for b in bounds:
-        c += b
-        ticks.append(d[min(c, len(d)-1)])
-    return order, d, ticks, labels
+    order_parts, x_parts = [], []
+    for i, (idx, k0, k1) in enumerate(segs):
+        frac = (k[idx] - k0) / (k1 - k0)          # 0 en x=i, 1 en x=i+1
+        srt = np.argsort(frac)
+        order_parts.append(idx[srt])
+        x_parts.append(i + frac[srt])
+    order = np.concatenate(order_parts)
+    x = np.concatenate(x_parts)
+    ticks = [0, 1, 2, 3]
+    return order, x, ticks, labels
 
 
-IMTOL = 0.18   # corte de 'fuga' |Im(mu)| para mostrar una banda
+IMTOL = 0.12   # corte de 'fuga' |Im(mu)| para mostrar una banda
 
 def load(npz):
     d = np.load(npz, allow_pickle=True)

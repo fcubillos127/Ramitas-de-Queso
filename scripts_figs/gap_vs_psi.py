@@ -12,7 +12,6 @@ Uso: python gap_vs_psi.py <dir_salida> <bands_hx.npz>
 import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
-import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.signal import argrelmin
 from bandcalc import build_red, CT0
@@ -51,6 +50,7 @@ def hx_diracK_from_bands(npz, kK=2*np.pi/3.0, win=(0.40, 0.56)):
 
 
 if __name__ == "__main__":
+    import matplotlib; matplotlib.use("Agg")
     S = sys.argv[1]
     hx_npz = sys.argv[2]
     t0 = time.perf_counter()

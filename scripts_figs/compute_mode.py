@@ -8,7 +8,6 @@ con a_m el vector nulo de (T G0 - I) en la solucion de banda.
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
-import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from numpy.linalg import svd
 from scipy.special import jv, hankel1
@@ -84,4 +83,5 @@ def main(out):
 
 
 if __name__ == "__main__":
+    import matplotlib; matplotlib.use("Agg")
     main(sys.argv[1])

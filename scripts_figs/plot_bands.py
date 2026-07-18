@@ -51,7 +51,7 @@ def path_order(lattice, k, a):
     return order, d, ticks, labels
 
 
-IMTOL = 0.25   # corte de 'fuga' |Im(mu)| para mostrar una banda
+IMTOL = 0.18   # corte de 'fuga' |Im(mu)| para mostrar una banda
 
 def load(npz):
     d = np.load(npz, allow_pickle=True)
@@ -94,7 +94,7 @@ def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title):
     xx = np.concatenate(xx) if xx else np.array([])
     yy = np.concatenate(yy) if yy else np.array([])
     span = ticks[-1] - ticks[0]
-    keep = clean_isolated(xx, yy, dx=2.2*span/max(len(order), 1), dy=0.035, min_neigh=2)
+    keep = clean_isolated(xx, yy, dx=2.4*span/max(len(order), 1), dy=0.028, min_neigh=2)
     vis = keep & (yy >= ylo-0.05) & (yy <= yhi+0.05)
     ax.plot(xx[vis], yy[vis], ".", color="k", ms=3.2)
     for t in ticks:

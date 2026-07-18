@@ -1,0 +1,78 @@
+# scripts_figs — figuras de bandas, modos y gap
+
+Rutinas para reproducir las figuras (red **cuadrada** y **triangular**, cavidad
+recubierta con `r1 = 0.45a`, `r2 = 0.5a`, para `ψ = 0, 0.2, 0.4, 0.6, 0.8`).
+
+Todos los scripts añaden solo la raíz del repo al `sys.path`, así que se corren
+**desde la raíz del proyecto** (donde están `Bandas_Tools.py`, `suma_de_red.py`, …).
+
+## Requisitos
+
+```bash
+pip install -r requirements.txt      # numpy, scipy, matplotlib, pandas, tqdm
+```
+
+En VSCode: abre la carpeta del repo como workspace y usa el intérprete donde
+instalaste eso. Las figuras se guardan donde indique el 2º argumento.
+
+## Método (resumen)
+
+Una banda es donde el determinante `det(T·G0 − I) = 0`. En vez de buscar mínimos
+de `|det|` (frágil: es el *producto* de los factores, borra ramas cercanas y su
+mínimo no siempre cruza un umbral), rastreamos los **autovalores `μᵢ` de `T·G0`**
+en ramas continuas en `ω` y tomamos los **cruces `Re(μᵢ) = 1`**. Es una condición
+de cruce (sin umbral de magnitud) y separa bandas juntas. Se guarda `|Im(μ)|`
+(medida de "fuga" del modo) para filtrar en el graficado. Como `T` no depende de
+`k`, se cachea y se reutiliza entre todos los `k`.
+
+## 1) Estructura de bandas
+
+```bash
+# calcular (guarda un .npz con k, wn=frecuencias, im=|Im(mu)|)
+python scripts_figs/compute_driver.py sq  data/bands_sq.npz
+python scripts_figs/compute_driver.py hx  data/bands_hx.npz
+
+# graficar (full 0-1.4 y zoom 0.7-1.2), estilo tesis, camino X-Γ-M-X / Γ-M-K-Γ
+python scripts_figs/plot_bands.py data/bands_sq.npz  graphs/bandas_sq
+python scripts_figs/plot_bands.py data/bands_hx.npz  graphs/bandas_hx
+```
+
+Parámetros útiles (editables arriba de cada archivo):
+- `compute_driver.py`: `PSIS`, `NK` (puntos de k), `NGRID` (resolución en ω), `WMAX`.
+- `bandcalc.compute_bands_eig`: `imtol` (holgado al calcular), `eta`.
+- `plot_bands.py`: `IMTOL` (corte de fuga al plotear) y los parámetros de
+  `clean_isolated` (filtro de continuidad).
+
+## 2) Gap vs. pre-deformación
+
+```bash
+python scripts_figs/gap_vs_psi.py graphs/
+# -> graphs/gap_vs_psi.png  y  graphs/gap_vs_psi.npz
+```
+Mide la separación de las dos bandas cerca del punto de alta simetría:
+desdoblamiento en **M** (cuadrada) y apertura del cono de **Dirac en K**
+(triangular). Ventanas y punto central en el dict `CONF`.
+
+## 3) Modos (campo antiplano `Re(u_z)`)
+
+```bash
+python scripts_figs/compute_mode.py graphs/modos_sq.png
+```
+Reconstruye el modo desde el vector nulo de `(T·G0 − I)` en el punto M:
+`u_z(r,θ) = Σ_m a_m [J_m(k0 r) + T_m H_m(k0 r)] e^{imθ}`. Las frecuencias objetivo
+están en la lista `targets`.
+
+## Parámetros físicos (en `bandcalc.build_red`)
+
+```python
+dens = [1150, 1250]      # densidades [kg/m^3]  (inclusión no se usa: cavidad)
+vel0 = [295, 295]        # [C_l, C_t] matriz [m/s]   (Ct0 = 295 normaliza el eje)
+vels = [894, 894]        # [C_l, C_t] inclusión
+cut  = 2                 # modos m ∈ {-2..2}  (como en la tesis)
+cond_borde = 'hollow'    # cavidad recubierta + pre-deformación angular psi
+r1 = 0.45, r2 = 0.5, a = 1.0
+```
+
+> Nota: las **bandas planas** ~1.0–1.3 son resonancias localizadas de "fuga"
+> (ω compleja); por eso su `|Im(μ)|` es mayor y el corte `IMTOL` controla cuánto
+> se muestran.

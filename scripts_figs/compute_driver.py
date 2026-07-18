@@ -7,12 +7,12 @@ from bandcalc import build_red, compute_bands_eig, CT0
 LAT = sys.argv[1] if len(sys.argv) > 1 else "sq"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "bands_%s.npz" % LAT
 PSIS = [0.0, 0.2, 0.4, 0.6, 0.8]
-NK, WMAX, NGRID = 120, 1.4, 1100
+NK, WMAX, NGRID, CUT = 70, 1.4, 1100, 7
 
 data = {"lattice": LAT, "psis": np.array(PSIS), "a": 1.0, "Ct0": CT0, "wmax": WMAX}
 t_all = time.perf_counter()
 for i, psi in enumerate(PSIS):
-    r = build_red(LAT, psi, cut=2, nk=NK)
+    r = build_red(LAT, psi, cut=CUT, nk=NK)
     t0 = time.perf_counter()
     k_arr, wn, im = compute_bands_eig(r, nk=NK, wmax=WMAX, ngrid=NGRID)
     data["k_%d" % i] = k_arr

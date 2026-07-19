@@ -42,11 +42,34 @@ python scripts_figs/plot_bands.py data/bands_sq.npz  graphs/bandas_sq
 python scripts_figs/plot_bands.py data/bands_hx.npz  graphs/bandas_hx
 ```
 
-Parámetros útiles (editables arriba de cada archivo):
-- `compute_driver.py`: `PSIS`, `NK` (puntos de k), `NGRID` (resolución en ω), `WMAX`.
-- `bandcalc.compute_bands_eig`: `imtol` (holgado al calcular), `eta`.
-- `plot_bands.py`: `IMTOL` (corte de fuga al plotear) y los parámetros de
-  `clean_isolated` (filtro de continuidad).
+### Parámetros: cuáles afectan qué
+
+`compute_driver.run(...)` expone **todos** los parámetros de control (también
+editables como constantes arriba del archivo, o pasándolos directo a `run()`):
+
+```python
+run("sq", "data/bands_sq.npz",
+    nk=70, cut=7, ngrid=1100, wmax=1.4,      # malla / geometría del cálculo
+    n_suma=5, eta=1e-3, imtol=0.6,           # suma de red y solver por autovalores
+    imag_tol=0.8, sol_tol=1e-2,              # solo si además usas zeros_longitudinal_fullgrid
+    cond_borde="hollow", r1=0.45, r2=0.5, filling=0.5, a=1.0)
+```
+
+| Parámetro | Qué controla | ¿Afecta el método por autovalores? |
+|---|---|---|
+| `cut` | orden multipolar, modos `m ∈ {-cut..cut}` | **Sí** (tamaño de la matriz `T·G0`) |
+| `n_suma` | términos de la suma de red (convergencia de `G0`) | **Sí** |
+| `nk` | puntos de `k` por camino | **Sí** (densidad de la banda) |
+| `ngrid` | puntos de `ω` al buscar cruces `Re(μ)=1` | **Sí** (resolución/precisión) |
+| `eta` | parte imaginaria fija de `ω` al evaluar `T(ω)`, `G0(ω)` | **Sí** (picos más/menos agudos) |
+| `imtol` (en `compute_bands_eig`/`run`) | corte **grueso** de `\|Im(μ)\|` al aceptar un cruce durante el cálculo | **Sí**, pero grueso |
+| `IMTOL` (en `plot_bands.py`) | corte **fino** de `\|Im(μ)\|` al graficar | No recalcula — se aplica sobre datos ya guardados |
+| `imag_tol`, `sol_tol` | tolerancias del solver original de Miguel (`fsolve` en `zeros_longitudinal_fullgrid`) | **No** — el método por autovalores no llama a `fsolve` |
+| `r1`, `r2`, `filling`, `a`, materiales | geometría/física de la celda | **Sí** |
+
+En resumen: para "tantear" combinaciones, lo que hay que mover es
+`cut`, `n_suma`, `ngrid`, `eta` (recalculan) y `IMTOL` de `plot_bands.py`
+(no recalcula, es gratis iterar).
 
 ## 2) Gap vs. pre-deformación
 

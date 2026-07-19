@@ -22,10 +22,17 @@ import numpy as np
 from bandcalc import build_red, CT0
 
 
-def eig_to_red(npz, psi_index=0, imtol=0.12, cut=7, frecfolder=None):
+def eig_to_red(npz, psi_index=0, imtol=0.12, cut=None, n_suma=5,
+               imag_tol=0.8, sol_tol=1e-2, cond_borde="hollow",
+               r1=0.45, r2=0.5, frecfolder=None):
     """Crea un Red con self.omega_longitudinal poblado desde el .npz de bandas
     (metodo de autovalores). Enmascara los modos de fuga con |Im(mu)|>imtol.
-    Deja el objeto listo para las rutinas de edicion de la clase."""
+    Deja el objeto listo para las rutinas de edicion de la clase.
+
+    cut=None -> se lee del .npz (guardado por compute_driver.run) si esta
+    disponible; si no, usa 2. n_suma, imag_tol, sol_tol, cond_borde, r1, r2 solo
+    importan si luego corres ademas el solver original de Miguel sobre este
+    mismo objeto (zeros_longitudinal_fullgrid)."""
     d = np.load(npz)
     lattice = str(d["lattice"]); a = float(d["a"]); Ct0 = float(d["Ct0"])
     psi = float(d["psis"][psi_index])
@@ -33,8 +40,12 @@ def eig_to_red(npz, psi_index=0, imtol=0.12, cut=7, frecfolder=None):
     wn = np.array(d["wn_%d" % psi_index]).copy()
     if ("im_%d" % psi_index) in d.files:
         wn[np.array(d["im_%d" % psi_index]) > imtol] = np.nan
+    if cut is None:
+        cut = int(d["cut"]) if "cut" in d.files else 2
 
-    r = build_red(lattice, psi, cut=cut, nk=len(k))
+    r = build_red(lattice, psi, cut=cut, nk=len(k), n_suma=n_suma,
+                  imag_tol=imag_tol, sol_tol=sol_tol, cond_borde=cond_borde,
+                  r1=r1, r2=r2, a=a)
     r.k = k
     r.nk = len(k)
     r.nbands = wn.shape[1]

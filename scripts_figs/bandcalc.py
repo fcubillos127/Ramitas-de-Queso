@@ -66,13 +66,20 @@ def compute_bands_eig(r, nk=100, wmax=1.4, ngrid=900, eta=1e-3, imtol=0.6, maxba
     return k_arr, wn, im_out
 
 
-def build_red(lattice, psi, cut=2, nk=90):
+def build_red(lattice, psi, cut=2, nk=90, n_suma=5, imag_tol=0.8, sol_tol=1e-2,
+              cond_borde="hollow", r1=0.45, r2=0.5, filling=0.5, a=1.0,
+              dens=(1150, 1250), vel0=(295, 295), vels=(894, 894)):
+    """Arma un objeto Red con TODOS los parametros de control expuestos:
+    cut (orden multipolar), n_suma (terminos de la suma de red), imag_tol y
+    sol_tol (tolerancias del solver), cond_borde, geometria (r1, r2, filling, a)
+    y materiales (dens, vel0, vels). Los valores por defecto son los usados en
+    los scripts hasta ahora; cambia lo que necesites al llamar la funcion."""
     r = Red(comp=["matriz", "inclusion"])
-    r.dens = [1150, 1250]; r.vel0 = [295, 295]; r.vels = [894, 894]
-    r.filling = 0.5; r.cut = cut; r.nbands = 12; r.nk = nk; r.n_suma = 5
-    r.lattice = lattice; r.psi = psi; r.a = 1.0; r._set_k_end()
-    r.cond_borde = "hollow"; r.imag_tol = 0.8; r.sol_tol = 1e-2
-    r.asign_param(); r.r1 = 0.45; r.r2 = 0.5
+    r.dens = list(dens); r.vel0 = list(vel0); r.vels = list(vels)
+    r.filling = filling; r.cut = cut; r.nbands = 12; r.nk = nk; r.n_suma = n_suma
+    r.lattice = lattice; r.psi = psi; r.a = a; r._set_k_end()
+    r.cond_borde = cond_borde; r.imag_tol = imag_tol; r.sol_tol = sol_tol
+    r.asign_param(); r.r1 = r1; r.r2 = r2
     return r
 
 

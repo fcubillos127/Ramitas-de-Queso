@@ -27,26 +27,46 @@ import gap_vs_psi as gvp                           # gap vs psi
 import compute_mode                                # modos
 
 # --- parámetros que puedes tocar ---
-NK   = 70      # puntos de k por camino (usa 30 para pruebas rápidas)
-CUT  = 7       # modos angulares m ∈ {-CUT..CUT} (usa 2 para pruebas rápidas)
-IMTOL = 0.12   # corte de 'fuga' |Im(mu)| al graficar (0.10-0.12 = limpio)
+# Malla / geometría del cálculo:
+NK    = 70      # puntos de k por camino (usa 30 para pruebas rápidas)
+CUT   = 7       # modos angulares m ∈ {-CUT..CUT} (usa 2 para pruebas rápidas)
+NGRID = 1100    # puntos de omega en la búsqueda de cruces (más = más preciso/lento)
+WMAX  = 1.4     # tope superior de omega_norm a explorar
+
+# Suma de red y solver (SÍ afectan el cálculo por autovalores que usan estos scripts):
+N_SUMA = 5      # términos de la suma de red (convergencia de G0; súbelo si dudas)
+ETA    = 1e-3   # parte imaginaria fija de omega al evaluar T(w), G0(w) (más chico = picos más agudos)
+IMTOL  = 0.6    # corte GRUESO de |Im(mu)| al ACEPTAR un cruce durante el cálculo
+
+# Tolerancias del solver de Miguel (zeros_longitudinal_fullgrid). NO afectan el
+# método por autovalores; solo importan si además corres ese solver original
+# (p.ej. desde bridge_to_omega) sobre el mismo objeto Red:
+IMAG_TOL = 0.8
+SOL_TOL  = 1e-2
+
+# Corte FINO al graficar (no requiere recalcular, se aplica en plot_bands):
+PLOT_IMTOL = 0.12   # 0.10-0.12 = limpio; súbelo para ver más bandas planas de resonancia
+
 os.makedirs("data", exist_ok=True); os.makedirs("graphs", exist_ok=True)
-print("OK — configurado. NK=%d CUT=%d" % (NK, CUT))
+print("OK — configurado. NK=%d CUT=%d N_SUMA=%d" % (NK, CUT, N_SUMA))
 
 
 # %% [2] Calcular bandas  (LENTO con cut=7; sáltate esta celda si ya tienes el .npz)
-run("sq", "data/bands_sq.npz", nk=NK, cut=CUT)
-run("hx", "data/bands_hx.npz", nk=NK, cut=CUT)
+run("sq", "data/bands_sq.npz", nk=NK, cut=CUT, ngrid=NGRID, wmax=WMAX,
+    n_suma=N_SUMA, eta=ETA, imtol=IMTOL, imag_tol=IMAG_TOL, sol_tol=SOL_TOL)
+run("hx", "data/bands_hx.npz", nk=NK, cut=CUT, ngrid=NGRID, wmax=WMAX,
+    n_suma=N_SUMA, eta=ETA, imtol=IMTOL, imag_tol=IMAG_TOL, sol_tol=SOL_TOL)
 
 
 # %% [3] Graficar bandas (X-Γ-M-X / Γ-M-K-Γ, tramos equiespaciados) — se ven inline
-make_figures("data/bands_sq.npz", "graphs/bandas_sq", imtol=IMTOL, show=True)
-make_figures("data/bands_hx.npz", "graphs/bandas_hx", imtol=IMTOL, show=True)
+make_figures("data/bands_sq.npz", "graphs/bandas_sq", imtol=PLOT_IMTOL, show=True)
+make_figures("data/bands_hx.npz", "graphs/bandas_hx", imtol=PLOT_IMTOL, show=True)
 
 
 # %% [4] Puente a las herramientas de edición: cargar un psi y ver los índices
 #     psi_index: 0->psi=0.0, 1->0.2, 2->0.4, 3->0.6, 4->0.8
-red = eig_to_red("data/bands_sq.npz", psi_index=4, imtol=IMTOL, cut=CUT)
+red = eig_to_red("data/bands_sq.npz", psi_index=4, imtol=PLOT_IMTOL, cut=CUT,
+                  n_suma=N_SUMA, imag_tol=IMAG_TOL, sol_tol=SOL_TOL)
 red.order_bands_by_continuity_global()     # reordena bandas por continuidad
 red.graficar_bandas_grid(ylim=[0, 1.4])    # mira aquí los puntos espurios a borrar
 # (índice i = punto de k [0..nk-1];  n = número de banda [0..nbands-1])

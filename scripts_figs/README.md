@@ -3,10 +3,15 @@
 Rutinas para reproducir las figuras (red **cuadrada** y **triangular**, cavidad
 recubierta con `r1 = 0.45a`, `r2 = 0.5a`, para `ψ = 0, 0.2, 0.4, 0.6, 0.8`).
 
-> **¿Solo quieres correrlo?** Abre **`ejemplo_completo.py`** (raíz del repo) en VSCode
-> y ejecuta sus celdas `# %%` una por una: calcular → graficar → editar a mano →
-> figura final → gap → modos, con las figuras inline. Lo de abajo es la referencia
-> de cada script por separado.
+> **¿Solo quieres correrlo?** Hay dos puntos de entrada en la raíz del repo, abre
+> el que corresponda en VSCode y corre sus celdas `# %%` una por una:
+> - **`explorar_estructura.py`** — UNA estructura (un lattice, un psi) a la vez,
+>   con todos los parámetros numéricos a mano, para tantear `cut`, `n_suma`,
+>   `nk`, `ngrid`, `wmax`, nº de bandas, etc. antes de comprometerte a un draft.
+> - **`ejemplo_completo.py`** — el draft completo con varios psi: calcular →
+>   graficar → editar a mano → figura final → gap → modos.
+>
+> Lo de abajo es la referencia de cada script por separado.
 
 Todos los scripts añaden solo la raíz del repo al `sys.path`, así que se corren
 **desde la raíz del proyecto** (donde están `Bandas_Tools.py`, `suma_de_red.py`, …).

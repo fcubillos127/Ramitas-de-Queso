@@ -115,12 +115,32 @@ Hace, en orden: (1) detecta puntos aislados por **enlace de paso** (compara
 cada punto solo contra sus vecinos de `k` inmediatos, no contra una ventana
 absoluta — así no confunde una banda con pendiente real, como la acústica,
 con ruido) y los borra con `red.delete_point(mode="fullgrid", preview=False)`
-(reversible con `red.restore_deleted()`); (2) rellena huecos internos chicos
-con `red.smooth_interpolate_longitudinal()`; (3) re-grafica.
+(reversible con `red.restore_deleted()`); (2) rellena huecos internos de a lo
+más 1 paso de `k` (`max_gap`), **y solo si** los dos valores que flanquean el
+hueco son parecidos entre sí — con interpolación propia, no con
+`red.smooth_interpolate_longitudinal()`; (3) re-grafica.
 
-Verificado sobre datos reales (`nk=50, cut=2`, ψ=0.0 y ψ=0.8): elimina ~9-12%
-de puntos genuinamente aislados y preserva exactamente las bandas físicas
-continuas (comparación visual antes/después). **No** elimina "islas" de 2-3
+⚠️ **Dos rondas de verificación, no una** — ambas encontraron problemas reales
+que se corrigieron antes de dar el resultado por bueno:
+- Primero, un detector de espurios por "ventana absoluta de frecuencia"
+  **borraba hasta 47% de los puntos, incluida la banda acústica completa**
+  (tiene pendiente real que excede cualquier ventana fija en pocos pasos) →
+  se rediseñó a "enlace de paso" tras comparar visualmente antes/después.
+- Después, usar `red.smooth_interpolate_longitudinal()` (sin límite de tamaño
+  de hueco) **fabricó decenas de puntos** a través de huecos de 8-10 pasos en
+  zonas ruidosas de resonancia. Al limitarlo a huecos de 1 paso, seguía
+  fabricando puntos ocasionales: el solver ordena por frecuencia ascendente en
+  cada `k` por separado sin rastrear la rama física, así que un hueco de 1
+  paso puede estar flanqueado por dos ramas físicas distintas (caso real:
+  ω_norm=0.05 saltando a 0.98 con un punto de hueco en medio; sin chequeo
+  adicional, la interpolación inventaba un punto intermedio ~0.52 que no
+  corresponde a nada calculado). Se agregó la condición de que los valores
+  flanqueantes deben ser parecidos antes de rellenar.
+
+Verificado sobre datos reales (`nk=50, cut=2`, ψ=0.0 y ψ=0.8) tras ambas
+correcciones: elimina ~9-12% de puntos genuinamente aislados, cambio neto de
+puntos ≈0, y ya no aparecen puntos fabricados fuera de tendencia (comparación
+visual antes/después/borrado/interpolado). **No** elimina "islas" de 2-3
 puntos que casualmente se enlazan entre sí — solo puntos totalmente sueltos.
 
 ⚠️ **No usa `red.order_bands_by_continuity_global()`**: verificado que (a) no

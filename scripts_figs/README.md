@@ -108,40 +108,66 @@ from postprocess_miguel import post_process
 red = Red(...)
 # ... parámetros, asign_param(), etc. ...
 red.zeros_longitudinal_fullgrid(C_l0=295.0, ventanas_por_unidad=100, w_norm_max=1.4)
-post_process(red)   # limpia in-place y re-grafica con graficar_bandas_grid
+post_process(red)   # QUITA fantasmas + AGREGA lo que falta, in-place, y re-grafica
+# deshacer TODO:  red.omega_longitudinal = red._omega_backup_postprocess.copy()
 ```
 
-Hace, en orden: (1) detecta puntos aislados por **enlace de paso** (compara
-cada punto solo contra sus vecinos de `k` inmediatos, no contra una ventana
-absoluta — así no confunde una banda con pendiente real, como la acústica,
-con ruido) y los borra con `red.delete_point(mode="fullgrid", preview=False)`
-(reversible con `red.restore_deleted()`); (2) rellena huecos internos de a lo
-más 1 paso de `k` (`max_gap`), **y solo si** los dos valores que flanquean el
-hueco son parecidos entre sí — con interpolación propia, no con
-`red.smooth_interpolate_longitudinal()`; (3) re-grafica.
+Reproduce las dos cosas que Miguel hacía a mano (verificado contra su
+pantallazo marcado: verde = quitar, naranja = agregar), en orden:
 
-⚠️ **Dos rondas de verificación, no una** — ambas encontraron problemas reales
-que se corrigieron antes de dar el resultado por bueno:
-- Primero, un detector de espurios por "ventana absoluta de frecuencia"
-  **borraba hasta 47% de los puntos, incluida la banda acústica completa**
-  (tiene pendiente real que excede cualquier ventana fija en pocos pasos) →
-  se rediseñó a "enlace de paso" tras comparar visualmente antes/después.
-- Después, usar `red.smooth_interpolate_longitudinal()` (sin límite de tamaño
-  de hueco) **fabricó decenas de puntos** a través de huecos de 8-10 pasos en
-  zonas ruidosas de resonancia. Al limitarlo a huecos de 1 paso, seguía
-  fabricando puntos ocasionales: el solver ordena por frecuencia ascendente en
-  cada `k` por separado sin rastrear la rama física, así que un hueco de 1
-  paso puede estar flanqueado por dos ramas físicas distintas (caso real:
-  ω_norm=0.05 saltando a 0.98 con un punto de hueco en medio; sin chequeo
-  adicional, la interpolación inventaba un punto intermedio ~0.52 que no
-  corresponde a nada calculado). Se agregó la condición de que los valores
-  flanqueantes deben ser parecidos antes de rellenar.
+1. **QUITAR fantasmas de red vacía** (las cadenas en "X" diagonales). El
+   determinante `det(T·G0 − I)` tiene **polos** de la suma de red sobre las
+   bandas de red vacía `ω = C_t0·|k+G|`; el buscador de cambios de signo +
+   `fsolve` del solver encuentra "raíces" pegadas a esos polos que **siguen
+   exactamente** las curvas `|k+G|` pero no son bandas físicas del cristal
+   (verificado: 30% de los puntos con ψ=0 y 49% con ψ=0.8 caen a <0.005 de
+   una curva de red vacía). Se detectan por **tubo + persistencia**: dentro de
+   `el_tol` de una curva `|k+G|` **y** con esa misma curva poblada en varias
+   columnas de `k` vecinas (un cruce accidental de una banda real la toca en
+   1-2 columnas; el fantasma la sigue en muchas). Cerca de Γ la curva `G=0` y
+   la banda acústica real convergen, así que ahí (`ω<el_floor`) no se marca.
+2. **QUITAR aislados** por enlace de paso (detector previo, para puntos
+   totalmente sueltos que no siguen ninguna curva).
+3. **AGREGAR lo que falta** (los "vacíos" de las bandas planas ~1.1–1.4 y, con
+   ψ grande, tramos de la acústica). El barrido del solver muestrea `Re(det)`
+   en pocos puntos por unidad de `ω` y **se salta** los cambios de signo
+   angostísimos de las resonancias planas. Aquí se rastrean los autovalores
+   `μᵢ` de `T·G0` en una grilla fina (**troceada** para que los polos no
+   descalabren el rastreo de ramas) y se toman los cruces `Re(μᵢ)=1`; cada
+   cruce se **refina con `fsolve` sobre el mismo `Det_longitudinal`** del
+   solver (mismos `sol_tol`, `imag_tol`, `epsfcn`) y se inserta. **No se
+   fabrica nada**: todo lo insertado es solución calculada de `det=0`. Los
+   candidatos que caen sobre una curva de red vacía se descartan (no se
+   re-siembran fantasmas).
+4. Reordena cada columna de `k` por frecuencia y rellena huecos de ≤1 paso.
+5. Re-grafica con `red.graficar_bandas_grid()`.
 
-Verificado sobre datos reales (`nk=50, cut=2`, ψ=0.0 y ψ=0.8) tras ambas
-correcciones: elimina ~9-12% de puntos genuinamente aislados, cambio neto de
-puntos ≈0, y ya no aparecen puntos fabricados fuera de tendencia (comparación
-visual antes/después/borrado/interpolado). **No** elimina "islas" de 2-3
-puntos que casualmente se enlazan entre sí — solo puntos totalmente sueltos.
+Verificado sobre datos reales (`nk=50, cut=2`): ψ=0.0 279→278 pts (90
+fantasmas + 27 aislados fuera, 109 insertados) y ψ=0.8 177→292 pts (79+25
+fuera, 213 insertados) — las cadenas en X desaparecen y las bandas planas
+quedan continuas, sin renacer fantasmas entre los insertados (`+0 post` en
+ambos). El paso 3 es **lento** (recalcula `T·G0` en grilla fina, ~40-110 s por
+ψ con estos parámetros): desactívalo con `completar=False` o acótalo con
+`windows=[(w_lo, w_hi)]` si solo quieres limpiar.
+
+⚠️ **Historial de tres iteraciones** (cada una corrigió un error real):
+- Detector por "ventana absoluta de frecuencia": borraba hasta 47% incl. la
+  banda acústica (pendiente real) → **enlace de paso**.
+- `red.smooth_interpolate_longitudinal()` (sin límite de hueco) fabricó
+  decenas de puntos a través de huecos de 8-10 pasos (279→330); y aun limitado
+  a 1 paso, el solver ordena por frecuencia por-`k` sin rastrear ramas, así que
+  un hueco puede unir dos ramas distintas (caso real: 0.05→0.98) → relleno
+  propio con `max_gap` **y** flancos parecidos.
+- El enlace de paso **no bastaba** (feedback con pantallazo): lo que hay que
+  quitar son **cadenas conectadas** (pasan el test de enlace) y lo que falta
+  **no se puede interpolar** (no hay puntos). De ahí los pasos 1 y 3, basados
+  en la física: polos de red vacía (quitar) y cruces de autovalores
+  recalculados (agregar).
+
+⚠️ **Gotcha de `delete_point`**: llama a `_ensure_tensor(nk, red.nbands)` y, si
+`red.nbands ≠ omega_longitudinal.shape[1]`, **reemplaza el tensor entero por
+NaN** (pérdida total silenciosa). `post_process` sincroniza `red.nbands` antes
+de tocar nada; si llamas los pasos por separado, hazlo tú también.
 
 ⚠️ **No usa `red.order_bands_by_continuity_global()`**: verificado que (a) no
 modifica `self.omega_longitudinal` (escribe en un atributo aparte,

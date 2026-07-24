@@ -92,6 +92,35 @@ Para limpieza automática de puntos espurios del solver original de Miguel, usar
 `scripts_figs/postprocess_miguel.py` (detector propio, verificado, no usa esta
 función) en vez de asumir que `order_bands_by_continuity_global` sirve tal cual.
 
+## Post-proceso del solver de Miguel: `postprocess_miguel.post_process`
+
+Verificado contra el pantallazo marcado del usuario (verde = quitar, naranja =
+agregar). Hace las dos cosas que Miguel curaba a mano:
+- **QUITA fantasmas de red vacía**: el determinante tiene *polos* de la suma de
+  red sobre `ω = C_t0·|k+G|`; el solver mete "raíces" pegadas a ellos que
+  siguen esas curvas pero no son bandas físicas (las cadenas en "X"). Se
+  detectan por **tubo + persistencia** (`detectar_fantasmas`), con protección
+  `el_floor` cerca de Γ donde `G=0` y la acústica convergen.
+- **AGREGA lo que el barrido se saltó** (bandas planas ~1.1–1.4 y tramos de la
+  acústica con ψ grande): `completar_bandas_eig` rastrea autovalores `μᵢ` de
+  `T·G0` en grilla fina **troceada** (los polos descalabran el rastreo de
+  ramas; trocear confina el daño), toma cruces `Re(μᵢ)=1`, los refina con
+  `fsolve` sobre el **mismo `Det_longitudinal`** del solver, descarta los que
+  caen sobre red vacía. No fabrica: todo insertado resuelve `det=0`. Es lento.
+Backup completo en `red._omega_backup_postprocess` (deshacer todo). `+0 post`
+= ningún fantasma renació entre los insertados. NO usa
+`smooth_interpolate_longitudinal` ni `order_bands_by_continuity_global`.
+
+## ⚠️ Gotcha verificado: `delete_point` puede vaciar TODO el tensor
+
+`Red.delete_point(i, n, mode="fullgrid")` llama a `_ensure_tensor(nk,
+self.nbands)`, que **reemplaza `omega_longitudinal` por NaN entero** si
+`self.nbands ≠ omega_longitudinal.shape[1]`. Pasa al cargar un
+`omega_longitudinal` externo (p. ej. `.npy` crudo del solver, o desde
+`bridge_to_omega`) sobre un `Red` armado con otro `nbands`. Único síntoma:
+avisos `"ya es NaN en RAM"` y datos vacíos. **Sincronizar `red.nbands =
+red.omega_longitudinal.shape[1]` antes de borrar** (ya lo hace `post_process`).
+
 ## ⚠️ Gotcha activo: `CT0` fijo, desacoplado de `r.vel0`
 
 `bandcalc.py` define `CT0 = 295.0` como constante de módulo y la usa para

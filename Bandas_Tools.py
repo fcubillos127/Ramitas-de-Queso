@@ -1263,8 +1263,15 @@ class Red:
         ALPHA =  D * b**2 * n / (2 * np.pi)  # constante psi
 
         # --- Funciones integrales ---
+        # Optimización (mismo patrón validado en coeficiente_dispersion_elastic):
+        # estas integrales SIEMPRE aparecen multiplicadas por ALPHA, que es 0
+        # cuando n==0 (ALPHA = D*b^2*n/(2*pi), proporcional a n), sin importar
+        # psi. Devolver 0.0 en ese caso evita la integracion numerica (quad)
+        # sin cambiar el resultado.
         def Fnb(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 J1 = jv(n, k0r)
                 return J1*(k0r* jvp(n, k0r)-J1)/(rp**3)
@@ -1283,7 +1290,9 @@ class Red:
             return real_integral[0] + 1j*imag_integral[0]
 
         def Fnc(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 return jv(n, k0r)*(k0r* h1vp(n, k0r)-hankel1(n, k0r))/(rp**3)
             def real_func(x):
@@ -1301,7 +1310,9 @@ class Red:
             return real_integral[0] + 1j*imag_integral[0]
 
         def Vnb(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 return hankel1(-n, k0r)*(k0r* jvp(n, k0r)-jv(n, k0r))/(rp**3)
             def real_func(x):
@@ -1319,7 +1330,9 @@ class Red:
             return real_integral[0] + 1j*imag_integral[0]
 
         def Vnc(r):
-            def func(rp): 
+            if ALPHA == 0:
+                return 0.0
+            def func(rp):
                 k0r= k0_*rp
                 return hankel1(-n, k0r)*(k0r* h1vp(n, k0r)-hankel1(n, k0r))/(rp**3)
             def real_func(x):
@@ -1335,26 +1348,26 @@ class Red:
             real_integral = quad(real_func, r, b, limit=100, epsabs=1e-6, epsrel=1e-8)
             imag_integral = quad(imag_func, r, b, limit=100, epsabs=1e-6, epsrel=1e-8)
             return real_integral[0] + 1j*imag_integral[0]
-        
+
         # --- Derivadas funciones integrales
         def Fnb_p(r):
             k0r= k0_*r
             J1 = jv(n, k0r)
             return J1*(k0r* jvp(n, k0r)-J1)/(r**3)
-        
+
         def Fnc_p(r):
             k0r= k0_*r
             return jv(n, k0r)*(k0r* h1vp(n, k0r)-hankel1(n, k0r))/(r**3)
-        
+
         def Vnb_p(r):
             k0r= k0_*r
             return -hankel1(n, k0r)*(k0r* jvp(n, k0r)-jv(n, k0r))/(r**3)
-        
+
         def Vnc_p(r):
             k0r= k0_*r
             H1 = hankel1(n, k0r)
             return -H1*(k0r* h1vp(n, k0r)-H1)/(r**3)
-        
+
 
         # --- Construcción de A1, A2 y sus derivadas ---
         k0a = k0_*a
@@ -1749,21 +1762,24 @@ class Red:
             intervalos = []
 
             # Definir función interna para subdividir un intervalo si hay más de un cambio
-            def subdividir(a, b, nivel):
+            # Optimización: f_a y f_b son SIEMPRE valores ya conocidos por quien
+            # llama (del barrido externo, o del padre en la recursión) -- se
+            # reciben como argumentos en vez de recalcularlos con eval_det (que
+            # dispara G0/T_n de nuevo). Solo el punto medio c es nuevo. Los
+            # valores numéricos y las decisiones son idénticos al original;
+            # solo cambia cuántas veces se llama a eval_det. El try/except
+            # original era inalcanzable: eval_det ya atrapa sus propias
+            # excepciones y nunca propaga una.
+            def subdividir(a, b, nivel, f_a, f_b):
                 c = 0.5 * (a + b)
-                try:
-                    f_a = eval_det(a, k_val)[0]
-                    f_c = eval_det(c, k_val)[0]
-                    f_b = eval_det(b, k_val)[0]
-                except:
-                    return [(a, b)]
+                f_c = eval_det(c, k_val)[0]
                 subints = []
                 if nivel >= max_nivel:
                     return [(a, b)]
                 if not (np.isnan(f_a) or np.isnan(f_c)) and f_a * f_c < 0:
-                    subints += subdividir(a, c, nivel + 1)
+                    subints += subdividir(a, c, nivel + 1, f_a, f_c)
                 if not (np.isnan(f_c) or np.isnan(f_b)) and f_c * f_b < 0:
-                    subints += subdividir(c, b, nivel + 1)
+                    subints += subdividir(c, b, nivel + 1, f_c, f_b)
                 if not subints:
                     subints = [(a, b)]
                 return subints
@@ -1774,7 +1790,7 @@ class Red:
                     continue
                 if fa * fb < 0:
                     a, b = w_array[i], w_array[i + 1]
-                    intervalos += subdividir(a, b, 0)
+                    intervalos += subdividir(a, b, 0, fa, fb)
             return intervalos
 
         def resolver_en_intervalo_continuacion(w_centro, k_val, ancho_rel=0.025, n_semillas=51):

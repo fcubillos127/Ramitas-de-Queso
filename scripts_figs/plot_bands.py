@@ -71,7 +71,13 @@ def clean_isolated(xs, ys, dx, dy, min_neigh=2):
     return keep
 
 
-def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title):
+def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title, clean=True):
+    """clean=True aplica el filtro clean_isolated (quita puntos sin >=2
+    vecinos): apropiado para la salida CRUDA del metodo por autovalores.
+    clean=False lo SALTA: usalo con datos ya curados (p.ej. tras
+    postprocess_miguel.post_process, o bandas editadas a mano) -- si no, el
+    filtro vuelve a borrar los puntos de banda plana insertados, que en la
+    grilla equiespaciada quedan mas separados y parecen 'aislados'."""
     order, x, ticks, labels = path_order(lattice, k, a)
     wn = wn_raw[order, :]
     xx, yy = [], []
@@ -80,7 +86,10 @@ def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title):
     xx = np.concatenate(xx) if xx else np.array([])
     yy = np.concatenate(yy) if yy else np.array([])
     span = ticks[-1] - ticks[0]
-    keep = clean_isolated(xx, yy, dx=2.4*span/max(len(order), 1), dy=0.028, min_neigh=2)
+    if clean:
+        keep = clean_isolated(xx, yy, dx=2.4*span/max(len(order), 1), dy=0.028, min_neigh=2)
+    else:
+        keep = np.ones(len(xx), dtype=bool)
     vis = keep & (yy >= ylo-0.05) & (yy <= yhi+0.05)
     ax.plot(xx[vis], yy[vis], ".", color="k", ms=3.2)
     for t in ticks:
@@ -90,29 +99,34 @@ def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title):
     ax.set_title(title, fontsize=12); ax.tick_params(labelsize=10)
 
 
-def _grid_fig(lattice, a, Ct0, series, ylo, yhi, suptitle):
+def _grid_fig(lattice, a, Ct0, series, ylo, yhi, suptitle, clean=True):
     n = len(series)
     fig, axes = plt.subplots(1, n, figsize=(3.0*n, 3.8), sharey=True)
     if n == 1: axes = [axes]
     for ax, (psi, k, wn) in zip(axes, series):
-        panel(ax, lattice, a, Ct0, k, wn, ylo, yhi, r"$\psi=%.1f$" % psi)
+        panel(ax, lattice, a, Ct0, k, wn, ylo, yhi, r"$\psi=%.1f$" % psi, clean=clean)
     axes[0].set_ylabel(r"$\omega a/2\pi C_{t0}$", fontsize=13)
     fig.suptitle(suptitle, fontsize=13, y=1.02)
     fig.tight_layout()
     return fig
 
 
-def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False):
+def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=True):
     """Genera <prefix>_full.png (rango completo) y <prefix>_zoom.png (0.7-1.2).
-    Devuelve (fig_full, fig_zoom). show=True los muestra (VSCode/Jupyter)."""
+    Devuelve (fig_full, fig_zoom). show=True los muestra (VSCode/Jupyter).
+
+    clean=True: filtro clean_isolated ON (salida cruda del metodo por
+    autovalores). clean=False: OFF, para datos YA curados (exportados tras
+    postprocess_miguel.post_process o edicion a mano) -- si no, se re-borran
+    los puntos de banda plana insertados."""
     lattice, a, Ct0, series = load(npz, imtol=imtol)
     latname = {"sq": "cuadrada", "hx": "triangular"}.get(lattice, lattice)
     for p in {os.path.dirname(prefix)} - {""}:
         os.makedirs(p, exist_ok=True)
     ttl = "Estructura de bandas — red %s  ($r_1{=}0.45a,\\ r_2{=}0.5a$)" % latname
-    fig_full = _grid_fig(lattice, a, Ct0, series, ylo, yhi, ttl)
+    fig_full = _grid_fig(lattice, a, Ct0, series, ylo, yhi, ttl, clean=clean)
     fig_full.savefig(prefix + "_full.png", dpi=160, bbox_inches="tight")
-    fig_zoom = _grid_fig(lattice, a, Ct0, series, 0.7, 1.2, "Zoom (0.7–1.2) — red %s" % latname)
+    fig_zoom = _grid_fig(lattice, a, Ct0, series, 0.7, 1.2, "Zoom (0.7–1.2) — red %s" % latname, clean=clean)
     fig_zoom.savefig(prefix + "_zoom.png", dpi=160, bbox_inches="tight")
     print("->", prefix + "_full.png", "/", prefix + "_zoom.png")
     if show:

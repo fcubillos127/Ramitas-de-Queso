@@ -175,6 +175,17 @@ modifica `self.omega_longitudinal` (escribe en un atributo aparte,
 vaciar TODOS los puntos en datos reales (un caso probado: 67 finitos → 0). No
 se investigó más por tocar un subsistema aparte fuera de este alcance.
 
+⚠️ **Al graficar datos ya post-procesados, usa `clean=False`.** `plot_bands`
+(y `graficar_bandas_grid` no, pero `plot_bands.panel`/`make_figures` sí) trae
+su propio filtro `clean_isolated` (exige ≥2 vecinos en una caja), calibrado
+para la salida CRUDA del método por autovalores. Sobre datos que ya pasaron
+por `post_process`, ese filtro **vuelve a borrar** los puntos de banda plana
+recién insertados (en la grilla equiespaciada quedan más separados y parecen
+"aislados") — la figura se ve más pelada que la del post-proceso. Exporta con
+`red_to_eig_npz` y grafica con `make_figures(..., clean=False)` (o
+`panel(..., clean=False)`) para respetar el post-proceso. Con la salida cruda
+del método por autovalores, deja `clean=True` (default).
+
 ## 4) Editar a mano las bandas (puente a las herramientas de la clase Red)
 
 Las rutinas de edición del código (`delete_point`, `order_bands_by_continuity_global`,

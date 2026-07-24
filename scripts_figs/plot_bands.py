@@ -19,26 +19,35 @@ IMTOL = 0.12   # corte de 'fuga' |Im(mu)| por defecto para mostrar una banda
 
 def path_order(lattice, k, a):
     """(orden_idx, x, ticks, labels) con tramos de alta simetría equiespaciados.
-    sq: X-Γ-M-X   |   hx: Γ-M-K-Γ.  Cada tramo ocupa ancho 1 (ticks en 0,1,2,3);
-    dentro de cada tramo x va de i a i+1 según la posición fraccional en k."""
+
+    El `k` ESCALAR recorre físicamente, según suma_de_red.K (verificado):
+        sq: M-Γ-X-M   (k=0→M, π/a→Γ, 2π/a→X, 3π/a→M)
+        hx: M-K-Γ-M   (k=0→M, 2π/3a→K, 2π/a→Γ, k_end→M)
+    Se respeta ESE orden natural, en el sentido de k CRECIENTE, sin invertir
+    ningún tramo. Cada tramo se reescala a ancho 1 (ticks en 0,1,2,3) porque en
+    hx los tramos no tienen igual ancho en k escalar.
+
+    ⚠️ La versión anterior INVERTÍA cada tramo para rotularlo X-Γ-M-X (sq) /
+    Γ-M-K-Γ (hx). Invertir un tramo voltea el signo aparente de la velocidad
+    de grupo -> las bandas salían con la dispersión al revés y NO calzaban con
+    las figuras de Miguel (lo detectó el usuario por la banda acústica en X-M,
+    que debe tener pendiente positiva). Miguel grafica ω vs k escalar directo
+    (graficar_bandas_grid, sin invertir), así que el orden natural reproduce
+    la forma de sus curvas."""
     k = np.asarray(k); pi = np.pi
     if lattice == "sq":
-        segs = [
-            (np.where((k > pi/a - 1e-9) & (k <= 2*pi/a + 1e-9))[0], 2*pi/a, pi/a),   # X->Γ
-            (np.where(k <= pi/a + 1e-9)[0],                          pi/a,   0.0),    # Γ->M
-            (np.where(k > 2*pi/a - 1e-9)[0],                         3*pi/a, 2*pi/a), # M->X
-        ]
-        labels = ["X", "Γ", "M", "X"]
-    else:  # hx : Γ-M-K-Γ
-        t = 2*pi/(3*a); kend = 2*pi*(1 + 1/np.sqrt(3))/a
-        segs = [
-            (np.where(k > 2*pi/a - 1e-9)[0],                      2*pi/a, kend),   # Γ->M
-            (np.where(k <= t + 1e-9)[0],                          0.0,    t),       # M->K
-            (np.where((k > t - 1e-9) & (k <= 2*pi/a + 1e-9))[0],  t,      2*pi/a),  # K->Γ
-        ]
-        labels = ["Γ", "M", "K", "Γ"]
+        bounds = [0.0, pi/a, 2*pi/a, 3*pi/a]
+        labels = ["M", "Γ", "X", "M"]
+    else:  # hx
+        kend = 2*pi*(1 + 1/np.sqrt(3))/a
+        bounds = [0.0, 2*pi/(3*a), 2*pi/a, kend]
+        labels = ["M", "K", "Γ", "M"]
     order_parts, x_parts = [], []
-    for i, (idx, k0, k1) in enumerate(segs):
+    for i in range(len(bounds) - 1):
+        k0, k1 = bounds[i], bounds[i + 1]
+        idx = np.where((k >= k0 - 1e-9) & (k <= k1 + 1e-9))[0]
+        if i > 0:                       # el punto de frontera va al tramo previo
+            idx = idx[k[idx] > k0 + 1e-9]
         frac = (k[idx] - k0) / (k1 - k0)
         srt = np.argsort(frac)
         order_parts.append(idx[srt]); x_parts.append(i + frac[srt])

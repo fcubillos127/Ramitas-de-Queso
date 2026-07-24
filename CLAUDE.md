@@ -57,10 +57,19 @@ de `omega_longitudinal` para poder editarlos a mano con las herramientas del mé
 
 ## Convenciones físicas / gotchas de nomenclatura
 
-- Eje de frecuencia normalizado: **`ωa/2πC_t0`**. Camino de alta simetría:
-  `X-Γ-M-X` (cuadrada) / `Γ-M-K-Γ` (triangular). `plot_bands.py` los dibuja con
-  **tramos equiespaciados** (mismo ancho cada segmento), como las figuras del
-  artículo — no distancia geométrica real en k.
+- Eje de frecuencia normalizado: **`ωa/2πC_t0`**. Camino de alta simetría (el
+  orden **natural** del `k` escalar en `suma_de_red.K`, verificado):
+  **`M-Γ-X-M`** (cuadrada: k=0→M, π/a→Γ, 2π/a→X, 3π/a→M) /
+  **`M-K-Γ-M`** (triangular). `plot_bands.py` los dibuja con **tramos
+  equiespaciados** (mismo ancho cada segmento), como las figuras del artículo —
+  no distancia geométrica real en k.
+- ⚠️ **`graficar_bandas_grid` de Miguel rotula `X-Γ-M-X`** (cuadrada), pero el
+  `k` escalar recorre `M-Γ-X-M`: **las etiquetas X↔M están intercambiadas** en
+  su versión. La *forma* de las curvas es correcta (grafica ω vs k directo). Una
+  versión previa de `plot_bands.path_order` **invertía cada tramo** para forzar
+  el rótulo X-Γ-M-X, y eso **voltea el signo de la velocidad de grupo** (la
+  acústica en X-M salía con pendiente negativa). Corregido: orden natural
+  M-Γ-X-M, sin invertir. Lo detectó el usuario por la dispersión de la acústica.
 - `cond_borde='rigid'` es un nombre engañoso: internamente selecciona
   `coeficiente_dispersion_elastic` (inclusión con material propio). **Cualquier
   otro valor** (p. ej. `'hollow'`, que es lo que usan `scripts_figs`) selecciona

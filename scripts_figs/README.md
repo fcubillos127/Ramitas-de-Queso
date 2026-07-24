@@ -42,7 +42,7 @@ de cruce (sin umbral de magnitud) y separa bandas juntas. Se guarda `|Im(μ)|`
 python scripts_figs/compute_driver.py sq  data/bands_sq.npz
 python scripts_figs/compute_driver.py hx  data/bands_hx.npz
 
-# graficar (full 0-1.4 y zoom 0.7-1.2), estilo tesis, camino X-Γ-M-X / Γ-M-K-Γ
+# graficar (full 0-1.4 y zoom 0.7-1.2), estilo tesis, camino M-Γ-X-M / M-K-Γ-M
 python scripts_figs/plot_bands.py data/bands_sq.npz  graphs/bandas_sq
 python scripts_figs/plot_bands.py data/bands_hx.npz  graphs/bandas_hx
 ```
@@ -209,8 +209,19 @@ red_to_eig_npz(red, "data/bands_sq_edit.npz", psi=0.8)
 
 - `IMTOL`/`imtol` (corte `|Im(μ)|`): **≈0.10–0.12** deja las bandas propagantes
   limpias (ver barrido). Súbelo si quieres conservar más bandas planas de resonancia.
-- Los ejes salen con **tramos de alta simetría equiespaciados** (X-Γ, Γ-M, M-X del
-  mismo ancho), como las figuras del artículo (en `plot_bands.py`).
+- Los ejes salen con **tramos de alta simetría equiespaciados** (M-Γ, Γ-X, X-M del
+  mismo ancho), como las figuras del artículo (en `plot_bands.py`). El camino es
+  **M-Γ-X-M** (cuadrada) / **M-K-Γ-M** (triangular) — el orden **natural** que
+  recorre el `k` escalar en `suma_de_red.K` (ver ⚠️ abajo), sin invertir tramos.
+
+⚠️ **`graficar_bandas_grid` de Miguel rotula X-Γ-M-X / M-K-Γ-M**, pero el `k`
+escalar recorre físicamente **M-Γ-X-M** (sq): las etiquetas X↔M de su versión
+cuadrada están intercambiadas respecto de lo que calcula `K()`. La *forma* de
+las curvas es correcta (grafica ω vs k directo); solo el rótulo de los extremos
+está cambiado. `plot_bands.path_order` usa el rótulo correcto (M-Γ-X-M) y **no
+invierte tramos** — una versión anterior sí los invertía y salía la dispersión
+con el signo al revés (p. ej. la acústica en X-M con pendiente negativa en vez
+de positiva).
 
 ## Parámetros físicos (en `bandcalc.build_red`)
 

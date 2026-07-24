@@ -58,7 +58,7 @@ run("hx", "data/bands_hx.npz", nk=NK, cut=CUT, ngrid=NGRID, wmax=WMAX,
     n_suma=N_SUMA, eta=ETA, imtol=IMTOL, imag_tol=IMAG_TOL, sol_tol=SOL_TOL)
 
 
-# %% [3] Graficar bandas (X-Γ-M-X / Γ-M-K-Γ, tramos equiespaciados) — se ven inline
+# %% [3] Graficar bandas (M-Γ-X-M / M-K-Γ-M, tramos equiespaciados) — se ven inline
 make_figures("data/bands_sq.npz", "graphs/bandas_sq", imtol=PLOT_IMTOL, show=True)
 make_figures("data/bands_hx.npz", "graphs/bandas_hx", imtol=PLOT_IMTOL, show=True)
 

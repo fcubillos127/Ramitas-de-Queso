@@ -95,6 +95,40 @@ Reconstruye el modo desde el vector nulo de `(T·G0 − I)` en el punto M:
 `u_z(r,θ) = Σ_m a_m [J_m(k0 r) + T_m H_m(k0 r)] e^{imθ}`. Las frecuencias objetivo
 están en la lista `targets`.
 
+## 4b) Post-procesamiento automático del solver ORIGINAL de Miguel
+
+`postprocess_miguel.py` corre DESPUÉS de `Red.zeros_longitudinal_fullgrid`
+(el solver con ventanas + `fsolve`), sin tocar `Bandas_Tools.py`:
+
+```python
+from Bandas_Tools import Red
+import sys; sys.path.insert(0, "scripts_figs")
+from postprocess_miguel import post_process
+
+red = Red(...)
+# ... parámetros, asign_param(), etc. ...
+red.zeros_longitudinal_fullgrid(C_l0=295.0, ventanas_por_unidad=100, w_norm_max=1.4)
+post_process(red)   # limpia in-place y re-grafica con graficar_bandas_grid
+```
+
+Hace, en orden: (1) detecta puntos aislados por **enlace de paso** (compara
+cada punto solo contra sus vecinos de `k` inmediatos, no contra una ventana
+absoluta — así no confunde una banda con pendiente real, como la acústica,
+con ruido) y los borra con `red.delete_point(mode="fullgrid", preview=False)`
+(reversible con `red.restore_deleted()`); (2) rellena huecos internos chicos
+con `red.smooth_interpolate_longitudinal()`; (3) re-grafica.
+
+Verificado sobre datos reales (`nk=50, cut=2`, ψ=0.0 y ψ=0.8): elimina ~9-12%
+de puntos genuinamente aislados y preserva exactamente las bandas físicas
+continuas (comparación visual antes/después). **No** elimina "islas" de 2-3
+puntos que casualmente se enlazan entre sí — solo puntos totalmente sueltos.
+
+⚠️ **No usa `red.order_bands_by_continuity_global()`**: verificado que (a) no
+modifica `self.omega_longitudinal` (escribe en un atributo aparte,
+`self.omega_longitudinal_ordered`) y (b) con sus parámetros por defecto puede
+vaciar TODOS los puntos en datos reales (un caso probado: 67 finitos → 0). No
+se investigó más por tocar un subsistema aparte fuera de este alcance.
+
 ## 4) Editar a mano las bandas (puente a las herramientas de la clase Red)
 
 Las rutinas de edición del código (`delete_point`, `order_bands_by_continuity_global`,

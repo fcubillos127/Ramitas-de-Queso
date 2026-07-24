@@ -67,7 +67,11 @@ make_figures("data/bands_hx.npz", "graphs/bandas_hx", imtol=PLOT_IMTOL, show=Tru
 #     psi_index: 0->psi=0.0, 1->0.2, 2->0.4, 3->0.6, 4->0.8
 red = eig_to_red("data/bands_sq.npz", psi_index=4, imtol=PLOT_IMTOL, cut=CUT,
                   n_suma=N_SUMA, imag_tol=IMAG_TOL, sol_tol=SOL_TOL)
-red.order_bands_by_continuity_global()     # reordena bandas por continuidad
+# NOTA: red.order_bands_by_continuity_global() existe pero NO se usa aquí:
+# no modifica red.omega_longitudinal (escribe en un atributo aparte,
+# omega_longitudinal_ordered) y, con sus parámetros por defecto, en datos
+# reales puede vaciar todos los puntos (verificado). El método por
+# autovalores ya entrega bandas razonablemente continuas sin este paso.
 red.graficar_bandas_grid(ylim=[0, 1.4])    # mira aquí los puntos espurios a borrar
 # (índice i = punto de k [0..nk-1];  n = número de banda [0..nbands-1])
 

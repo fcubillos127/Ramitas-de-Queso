@@ -1,14 +1,22 @@
 """
 Puente entre las bandas por autovalores (scripts_figs) y las herramientas de
-edicion manual de la clase Red (delete_point, order_bands_by_continuity_global,
-smooth_interpolate_longitudinal, graficar_bandas_grid), que operan sobre
-self.omega_longitudinal.
+edicion manual de la clase Red (delete_point, smooth_interpolate_longitudinal,
+graficar_bandas_grid), que operan sobre self.omega_longitudinal.
+
+NOTA sobre order_bands_by_continuity_global: existe en la clase pero NO se usa
+aqui. Verificado sobre datos reales que (a) NO modifica self.omega_longitudinal
+-- escribe el resultado en un atributo aparte, self.omega_longitudinal_ordered
+-- y (b) con sus parametros por defecto puede vaciar TODOS los puntos (un caso
+real: 67 finitos -> 0). Si se quiere usar, hay que capturar y asignar el
+resultado explicitamente y calibrar sus tolerancias antes. Para limpieza
+automatica de puntos espurios, ver scripts_figs/postprocess_miguel.py
+(detector propio, verificado, pensado para el solver original de Miguel pero
+tambien aplicable aqui sobre red.omega_longitudinal).
 
 Flujo tipico (en VSCode):
 
     from scripts_figs.bridge_to_omega import eig_to_red, red_to_eig_npz
     red = eig_to_red("data/bands_sq_c7.npz", psi_index=4, imtol=0.12)  # psi=0.8
-    red.order_bands_by_continuity_global()      # reordena por continuidad
     red.delete_point(i=30, n=5)                 # borra un espurio (con undo: restore_deleted)
     red.smooth_interpolate_longitudinal()       # rellena huecos internos
     red.graficar_bandas_grid(ylim=[0, 1.4])     # grafica (estilo del codigo)
@@ -77,12 +85,11 @@ def red_to_eig_npz(red, out, psi=None, imag=None):
 
 
 if __name__ == "__main__":
-    # demo/autotest: carga, reordena, borra, suaviza y exporta (sin ventana)
+    # demo/autotest: carga, suaviza (sin ventana). Ver postprocess_miguel.py
+    # para el detector automatico de puntos espurios.
     import matplotlib; matplotlib.use("Agg")
     npz = sys.argv[1] if len(sys.argv) > 1 else "bands_sq_c7.npz"
     r = eig_to_red(npz, psi_index=0)
     print("omega_longitudinal:", r.omega_longitudinal.shape, " nbands:", r.nbands)
-    r.order_bands_by_continuity_global()
-    print("order_bands_by_continuity_global: OK")
     r.smooth_interpolate_longitudinal()
     print("smooth_interpolate_longitudinal: OK")

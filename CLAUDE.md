@@ -79,6 +79,19 @@ de `omega_longitudinal` para poder editarlos a mano con las herramientas del mé
   `smooth_interpolate_longitudinal` con *undo*). Ningún cálculo crudo —ni el suyo
   ni el mío— sale idéntico a una figura de paper sin ese paso de limpieza.
 
+## ⚠️ Gotcha verificado: `order_bands_by_continuity_global()` no hace lo que parece
+
+`Red.order_bands_by_continuity_global()` **no modifica `self.omega_longitudinal`**:
+escribe el resultado en un atributo aparte (`self.omega_longitudinal_ordered`)
+y lo retorna — hay que capturarlo y asignarlo explícitamente para que tenga
+efecto. Peor: con sus parámetros por defecto (`delta_max_norm=0.18`, etc.),
+verificado sobre datos reales que puede **vaciar todos los puntos** (un caso
+probado: 67 finitos → 0, `"assigned=0/160"` en su propio log). No se depuró
+más a fondo por ser un subsistema aparte (fuera de alcance salvo que se pida).
+Para limpieza automática de puntos espurios del solver original de Miguel, usar
+`scripts_figs/postprocess_miguel.py` (detector propio, verificado, no usa esta
+función) en vez de asumir que `order_bands_by_continuity_global` sirve tal cual.
+
 ## ⚠️ Gotcha activo: `CT0` fijo, desacoplado de `r.vel0`
 
 `bandcalc.py` define `CT0 = 295.0` como constante de módulo y la usa para

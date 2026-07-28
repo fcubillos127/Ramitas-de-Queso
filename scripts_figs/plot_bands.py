@@ -120,9 +120,11 @@ def _grid_fig(lattice, a, Ct0, series, ylo, yhi, suptitle, clean=True):
     return fig
 
 
-def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=True):
-    """Genera <prefix>_full.png (rango completo) y <prefix>_zoom.png (0.7-1.2).
-    Devuelve (fig_full, fig_zoom). show=True los muestra (VSCode/Jupyter).
+def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=True,
+                 zoom_ylo=0.7, zoom_yhi=1.2):
+    """Genera <prefix>_full.png (rango ylo-yhi) y <prefix>_zoom.png (rango
+    zoom_ylo-zoom_yhi). Devuelve (fig_full, fig_zoom). show=True los muestra
+    (VSCode/Jupyter).
 
     clean=True: filtro clean_isolated ON (salida cruda del metodo por
     autovalores). clean=False: OFF, para datos YA curados (exportados tras
@@ -135,7 +137,8 @@ def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=T
     ttl = "Estructura de bandas — red %s  ($r_1{=}0.45a,\\ r_2{=}0.5a$)" % latname
     fig_full = _grid_fig(lattice, a, Ct0, series, ylo, yhi, ttl, clean=clean)
     fig_full.savefig(prefix + "_full.png", dpi=160, bbox_inches="tight")
-    fig_zoom = _grid_fig(lattice, a, Ct0, series, 0.7, 1.2, "Zoom (0.7–1.2) — red %s" % latname, clean=clean)
+    zoom_ttl = "Zoom (%.1f–%.1f) — red %s" % (zoom_ylo, zoom_yhi, latname)
+    fig_zoom = _grid_fig(lattice, a, Ct0, series, zoom_ylo, zoom_yhi, zoom_ttl, clean=clean)
     fig_zoom.savefig(prefix + "_zoom.png", dpi=160, bbox_inches="tight")
     print("->", prefix + "_full.png", "/", prefix + "_zoom.png")
     if show:

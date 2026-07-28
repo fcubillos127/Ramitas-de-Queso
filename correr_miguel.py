@@ -49,7 +49,8 @@ NK      = 50         # puntos de k sobre el camino (usa 30 para probar rapido)
 CUT     = 2          # modos m in {-CUT..CUT} (la tesis usa 2)
 NBANDS  = 8          # nº de soluciones que guarda el solver por cada k
 N_SUMA  = 5          # terminos de la suma de red (convergencia de G0)
-WMAX    = 1.4        # tope de omega normalizada a explorar
+WMAX    = 1.4        # tope de omega normalizada a EXPLORAR (el solver no busca mas arriba
+                     # de esto; si subes YHI/ZOOM_YHI, sube WMAX tambien o no habra datos)
 
 # Tolerancias del solver de Miguel (fsolve dentro de zeros_longitudinal_fullgrid):
 IMAG_TOL = 0.8       # descarta soluciones con |Im(omega)| mayor (fuga)
@@ -58,6 +59,11 @@ VENTANAS_POR_UNIDAD = 100   # densidad del muestreo de Re(det) al buscar cambios
 
 # Post-proceso:
 COMPLETAR = True     # True = ademas AGREGA lo que el barrido se salto (lento). False = solo limpia.
+
+# Figura (celda [4]):
+YHI      = 1.4       # tope del eje omega en la figura "full" (<= WMAX, si no, se ve vacio arriba)
+ZOOM_YLO = 0.7        # rango del eje omega en la figura "zoom"
+ZOOM_YHI = 1.2        # (subelo hasta WMAX si quieres ver mas alto, p.ej. 1.7 -> sube WMAX tambien)
 
 r = build_red(LATTICE, PSI, cut=CUT, nk=NK, n_suma=N_SUMA,
               imag_tol=IMAG_TOL, sol_tol=SOL_TOL, cond_borde="hollow",
@@ -88,7 +94,8 @@ print("Post-proceso listo. Puntos finitos:",
 npz = os.path.join("data", "miguel_%s_psi%s.npz" % (LATTICE, PSI))
 red_to_eig_npz(r, npz, psi=PSI)
 make_figures(npz, os.path.join("graphs", "miguel_%s_psi%s" % (LATTICE, PSI)),
-             imtol=1.0, clean=False, show=True)   # imtol=1.0: los datos ya estan filtrados
+             imtol=1.0, clean=False, show=True,   # imtol=1.0: los datos ya estan filtrados
+             yhi=YHI, zoom_ylo=ZOOM_YLO, zoom_yhi=ZOOM_YHI)
 #   -> graphs/miguel_<lat>_psi<psi>_full.png  y  _zoom.png
 #
 # NOTA sobre etiquetas: r.graficar_bandas_grid() (de Miguel) rotula X-Gamma-M-X,

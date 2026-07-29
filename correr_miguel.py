@@ -46,7 +46,9 @@ print("OK - configurado.")
 LATTICE = "sq"       # "sq" cuadrada  |  "hx" triangular
 PSI     = 0.8        # pre-deformacion angular
 NK      = 50         # puntos de k sobre el camino (usa 30 para probar rapido)
-CUT     = 2          # modos m in {-CUT..CUT} (la tesis usa 2)
+CUT     = 6          # modos m in {-CUT..CUT}. 6 = el valor del main.py de Miguel y el
+                     # que REPRODUCE las Figs. 3-4 (verificado). Con cut=2 NO aparece
+                     # la banda plana de ~1.02 que protagoniza la Fig. 4.
 NBANDS  = 8          # nº de soluciones que guarda el solver por cada k
 N_SUMA  = 5          # terminos de la suma de red (convergencia de G0)
 WMAX    = 1.4        # tope de omega normalizada a EXPLORAR (el solver no busca mas arriba

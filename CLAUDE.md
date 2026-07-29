@@ -77,9 +77,17 @@ de `omega_longitudinal` para poder editarlos a mano con las herramientas del mé
 - `coeficiente_dispersion_hollow` **no depende de materiales**: `mu0` se asigna
   pero nunca se usa en el cuerpo de la función. Para ese modelo la física depende
   solo de `ψ`, `r1/a`, `r2/a` — no de densidad ni velocidades.
-- La tesis usa `cut=2` (`m ∈ {−2..2}`) para las figuras de bandas publicadas.
-  `cut` más alto (p. ej. 7) es válido pero revela más resonancias planas — no
-  esperes que se vea igual a la figura publicada sin igualar `cut`.
+- ⚠️ **`cut=6` es el valor que reproduce las Figs. 3–4** (`m ∈ {−6..6}`), no
+  `cut=2`. Es lo que dice el `main.py` de Miguel y está **verificado**: con
+  `cut=6` el espectro calza con la Fig. 3 en todos los puntos de alta simetría
+  (X: 0.416/0.702/0.708/1.324 vs sus ~0.42/~0.71/~1.33; Γ: 0.848/1.027/1.218 vs
+  sus ~0.85/~1.02/~1.21; M: 0.263/0.709/1.029 vs sus ~0.27/~0.71/~1.02).
+  **La banda plana de ~1.02 —la protagonista de la Fig. 4— NO EXISTE con
+  `cut=2`**: con cut=2 en Γ salen 0.851 y 1.180, sin nada en 1.02. Una versión
+  previa de este archivo afirmaba "la tesis usa cut=2"; era falso y provocó una
+  investigación larga en falso (se llegó a sospechar del solver, de
+  `cond_borde` y del fix de la parte imaginaria). Si algo no calza con las
+  figuras publicadas, **lo primero que hay que revisar es `cut`**.
 - Las bandas "planas" cerca de `ωa/2πC_t0 ≈ 1.0–1.3` son **resonancias de fuga**
   (frecuencia compleja). Es normal que salgan más ruidosas/dispersas que las
   bandas propagantes — no es necesariamente un bug.

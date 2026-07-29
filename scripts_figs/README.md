@@ -229,7 +229,9 @@ de positiva).
 dens = [1150, 1250]      # densidades [kg/m^3]  (inclusión no se usa: cavidad)
 vel0 = [295, 295]        # [C_l, C_t] matriz [m/s]   (Ct0 = 295 normaliza el eje)
 vels = [894, 894]        # [C_l, C_t] inclusión
-cut  = 2                 # modos m ∈ {-2..2}  (como en la tesis)
+cut  = 6                 # modos m ∈ {-6..6}  <- el valor que REPRODUCE las Figs. 3-4
+                          #    (es el del main.py de Miguel; verificado punto por punto).
+                          #    Con cut=2 NO aparece la banda plana de ~1.02 de la Fig. 4.
 cond_borde = 'hollow'    # cavidad recubierta + pre-deformación angular psi
 r1 = 0.45, r2 = 0.5, a = 1.0
 ```

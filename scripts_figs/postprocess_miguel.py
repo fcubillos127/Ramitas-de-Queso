@@ -362,6 +362,15 @@ def completar_bandas_eig(red, windows=None, ngrid_por_unidad=800,
                             n_refinados += 1
                     except Exception:
                         pass
+                # DEDUP POST-REFINADO (imprescindible): el dedup de arriba se
+                # aplica al cruce CRUDO wn_c, pero varios cruces vecinos
+                # separados por mas de `dedup` pueden converger con fsolve a la
+                # MISMA raiz (verificado: un k con 5 cruces distintos refinando
+                # todos a w_norm=1.0236). Sin este segundo chequeo se insertan
+                # puntos repetidos.
+                wn_ins = w_ins * a / (2 * np.pi * Ct0)
+                if existentes.size and np.min(np.abs(existentes - wn_ins)) < dedup:
+                    continue
                 # insertar en el primer hueco NaN de la columna (o crecer)
                 fila = om[i, :, 0]
                 libres = np.where(~np.isfinite(fila))[0]
@@ -374,8 +383,8 @@ def completar_bandas_eig(red, windows=None, ngrid_por_unidad=800,
                     n_col = om.shape[1] - 1
                 om[i, n_col, 0] = w_ins
                 om[i, n_col, 1] = wi_ins
-                existentes = np.append(existentes, w_ins * a / (2 * np.pi * Ct0))
-                insertados.append((i, n_col, float(w_ins * a / (2 * np.pi * Ct0))))
+                existentes = np.append(existentes, wn_ins)
+                insertados.append((i, n_col, float(wn_ins)))
     if verbose and (insertados or n_saltados):
         print("[completar_bandas_eig] insertados %d puntos (%d refinados con fsolve; "
               "%d candidatos saltados por caer sobre la red vacia)"

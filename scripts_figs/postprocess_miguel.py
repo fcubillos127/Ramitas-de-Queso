@@ -229,7 +229,8 @@ def completar_bandas_eig(red, windows=None, ngrid_por_unidad=800,
                          eta=1e-3, imtol_eig=0.8, dedup=0.012,
                          refinar=True, snap=0.02, eta_det=1e-2,
                          evitar_fantasmas=True, el_tol=0.018, el_floor=0.10,
-                         shells=3, chunk=0.15, solape=0.01, verbose=True):
+                         shells=3, chunk=0.15, solape=0.01,
+                         k_indices=None, verbose=True):
     """Busca soluciones de det(T*G0-I)=0 que el barrido de cambios de signo
     del solver se salto (tipicamente las bandas planas de resonancia, cuyos
     cambios de signo son angostisimos) y las INSERTA en red.omega_longitudinal.
@@ -264,8 +265,18 @@ def completar_bandas_eig(red, windows=None, ngrid_por_unidad=800,
     confina el dano al trozo que contiene el polo; el solape + dedup cubren
     los cruces que caen justo en un borde.
 
+    k_indices: lista/array de indices de k donde buscar. None = todos. Sirve
+    para RELLENAR HUECOS PUNTUALES sin recalcular toda la estructura: el costo
+    escala con len(k_indices) x ancho de `windows`, asi que acotar ambos baja
+    el tiempo de horas a minutos. Combinalo con `windows` para atacar solo el
+    recuadro (k, omega) que falta.
+
     evitar_fantasmas: no inserta candidatos a menos de `el_tol` de una curva
     de red vacia (mismas curvas y proteccion el_floor que detectar_fantasmas).
+    OJO: ponlo en False cuando el hueco que quieres rellenar esta JUSTO sobre
+    una curva de red vacia y sabes que la banda es fisica -- p.ej. la banda
+    plana ~0.707 cerca de X en la cuadrada, que coincide con |k+G| solo en el
+    punto X mismo. Con True se rechazaria precisamente el punto que falta.
     Por que NO dejarselo a la segunda pasada de detectar_fantasmas: los polos
     fuertes tambien generan cruces Re(mu)=1, y si se insertan re-poblan la
     cadena sobre la curva -- con lo que la persistencia condenaria despues
@@ -303,10 +314,12 @@ def completar_bandas_eig(red, windows=None, ngrid_por_unidad=800,
             lo = edges[j] - (solape if j > 0 else 0.0)
             sub_windows.append((lo, edges[j + 1]))
 
+    ks_a_barrer = range(nk) if k_indices is None else [int(i) for i in k_indices]
+
     for (w_lo, w_hi) in sub_windows:
         ng = max(120, int(round((w_hi - w_lo) * ngrid_por_unidad)))
         wg = np.linspace(w_lo, w_hi, ng) * 2 * np.pi * Ct0 / a   # rad/s
-        for i in range(nk):
+        for i in ks_a_barrer:
             tr = _eig_branches(red, kk[i], wg, eta)
             cand = []
             for b in range(tr.shape[1]):

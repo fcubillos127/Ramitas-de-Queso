@@ -128,6 +128,29 @@ Backup completo en `red._omega_backup_postprocess` (deshacer todo). `+0 post`
 = ningún fantasma renació entre los insertados. NO usa
 `smooth_interpolate_longitudinal` ni `order_bands_by_continuity_global`.
 
+## ⚠️ Verificado: subir `sol_tol` NO rellena vacíos (rellena con polos)
+
+`sol_tol` es el `xtol` de `fsolve` en `zeros_longitudinal_fullgrid`. Subirlo
+**sí** aumenta mucho el nº de soluciones aceptadas (verificado con ψ=0.6,
+cut=12, n_suma=20, sobre 7 puntos de k: **16 → 38 soluciones** al pasar de
+`1e-6` a `1e-1`). Pero **ninguna de las nuevas es una raíz**:
+
+- Al re-refinar con `xtol=1e-12`, de 19 soluciones halladas con `sol_tol=0.1`
+  en 3 puntos de k, **7 son estables y 12 espurias**; y las 7 estables son
+  exactamente las que ya salían con `sol_tol=1e-6`. Cero ganancia real.
+- Las nuevas **se mueven con `sol_tol`** (mismo k, mismo intervalo: 1.115 →
+  1.015 → 0.937 al subir de 0.01 a 0.1 a 0.5) — señal de que son el punto
+  donde `fsolve` se detuvo, no una raíz.
+- **Causa raíz**: `Re(det)` cambia de signo al cruzar un **polo** de la suma de
+  red (`ω = C_t0·|k+G|`), no solo al cruzar un cero. El barrido de cambios de
+  signo no los distingue. Verificado: 9 de 12 espurias caen a <0.006 de una
+  curva `|k+G|`, mientras que las raíces genuinas están a 0.11–0.22 de ellas.
+
+Para rellenar vacíos de verdad usar `completar_bandas_eig` (cruces
+`Re(μᵢ)=1`, que sí distinguen cero de polo). Si aun así se quiere usar
+`sol_tol` grande, filtrar por estabilidad: re-refinar con `xtol` chico y
+conservar solo las soluciones que no se mueven.
+
 ## ⚠️ Gotcha verificado: `delete_point` puede vaciar TODO el tensor
 
 `Red.delete_point(i, n, mode="fullgrid")` llama a `_ensure_tensor(nk,

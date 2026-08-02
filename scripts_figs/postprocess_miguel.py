@@ -493,7 +493,7 @@ def rellenar_huecos_chicos(red, max_gap=1, dw_step=0.06):
 
 def post_process(red, dw_step=0.06,
                  fantasmas=True, el_tol=0.018, el_persist=2, el_min_vecinos=2,
-                 el_floor=0.10,
+                 el_floor=0.10, aislados=True,
                  completar=True, windows=None, imtol_eig=0.5,
                  refinar=True,
                  interpolar=True, max_gap=1, graficar=True, ylim=(0.0, 1.4),
@@ -502,10 +502,18 @@ def post_process(red, dw_step=0.06,
     zeros_longitudinal_fullgrid). Modifica red.omega_longitudinal in-place;
     guarda antes una copia en red._omega_backup_postprocess. Devuelve `red`.
 
-    Pasos (cada uno desactivable): fantasmas de red vacia -> aislados ->
-    completar bandas en `windows` (LENTO: recalcula T*G0 en una grilla fina;
-    del orden de la corrida original en esas ventanas) -> reordenar por k ->
-    rellenar huecos chicos. Ver docstrings individuales para los criterios."""
+    Pasos, con su interruptor:
+      1. `fantasmas`  QUITA los pegados a las curvas de red vacia |k+G|
+      2. `aislados`   QUITA los puntos sin enlace con ningun k vecino
+      3. `completar`  AGREGA lo que el barrido se salto (LENTO: recalcula T*G0)
+      4. resort_por_k reordena cada columna de k por frecuencia (SIEMPRE corre;
+                      no agrega ni quita nada, solo reordena)
+      5. `interpolar` RELLENA huecos internos de <= max_gap pasos de k
+
+    Para NO tocar los datos: post_process(red, fantasmas=False, aislados=False,
+    completar=False, interpolar=False)  -- queda solo el reordenado y, si
+    graficar=True, la figura. O directamente no llames a post_process.
+    """
     # OJO (verificado con datos reales): red.delete_point llama a
     # _ensure_tensor(nk, red.nbands) y, si red.nbands NO coincide con
     # omega_longitudinal.shape[1], REEMPLAZA el tensor entero por NaN
@@ -527,11 +535,12 @@ def post_process(red, dw_step=0.06,
             print("[post_process] fantasmas de red vacia eliminados: %d / %d puntos"
                   % (len(fant), n_antes))
 
-    espurios = detectar_espurios(red, dw_step=dw_step)
-    for (i, n) in espurios:
-        red.delete_point(i, n, mode="fullgrid", preview=False, sync_disk=False)
-    if verbose:
-        print("[post_process] puntos aislados eliminados: %d" % len(espurios))
+    if aislados:
+        espurios = detectar_espurios(red, dw_step=dw_step)
+        for (i, n) in espurios:
+            red.delete_point(i, n, mode="fullgrid", preview=False, sync_disk=False)
+        if verbose:
+            print("[post_process] puntos aislados eliminados: %d" % len(espurios))
 
     if completar:
         completar_bandas_eig(red, windows=windows, imtol_eig=imtol_eig,

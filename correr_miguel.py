@@ -70,8 +70,13 @@ IMAG_TOL = 0.8       # descarta soluciones con |Im(omega)| mayor (fuga)
 SOL_TOL  = 1e-2      # xtol de fsolve
 VENTANAS_POR_UNIDAD = 100   # densidad del muestreo de Re(det) al buscar cambios de signo
 
-# Post-proceso:
-COMPLETAR = True     # True = ademas AGREGA lo que el barrido se salto (lento). False = solo limpia.
+# Post-proceso (cada paso se apaga por separado):
+FANTASMAS  = True    # QUITA los puntos pegados a las curvas de red vacia |k+G|
+AISLADOS   = True    # QUITA los puntos sin enlace con ningun k vecino
+COMPLETAR  = True    # AGREGA lo que el barrido se salto (LENTO: recalcula T*G0)
+INTERPOLAR = True    # RELLENA huecos internos de <= 1 paso de k
+# Para ver los datos CRUDOS del solver, sin tocar nada: pon los cuatro en False
+# (o comenta la llamada a post_process en la celda [3]).
 
 # Figura (celda [4]):
 YHI      = 1.4       # tope del eje omega en la figura "full" (<= WMAX, si no, se ve vacio arriba)
@@ -97,7 +102,9 @@ r.zeros_longitudinal_fullgrid(C_l0=float(r.vel0[1]),
                               w_norm_min=WMIN, w_norm_max=WMAX)
 # post_process modifica r.omega_longitudinal in-place; backup en
 # r._omega_backup_postprocess (deshacer: r.omega_longitudinal = r._omega_backup_postprocess.copy())
-post_process(r, completar=COMPLETAR, graficar=False)   # graficar=False: usamos plot_bands abajo
+post_process(r, fantasmas=FANTASMAS, aislados=AISLADOS,
+             completar=COMPLETAR, interpolar=INTERPOLAR,
+             graficar=False)          # graficar=False: usamos plot_bands abajo
 print("Post-proceso listo. Puntos finitos:",
       int(np.sum(np.isfinite(r.omega_longitudinal[:, :, 0]))))
 

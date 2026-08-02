@@ -178,8 +178,29 @@ Antes de optimizar o refactorizar código de cálculo: generar una **línea base
 dorada** (correr con el código actual, guardar resultados en `.npz`) y después
 del cambio verificar `max|nuevo − base| == 0.0` (o dentro de tolerancia
 explícita). Así se verificaron todas las optimizaciones de este repo (G0
-Toeplitz + caché, cortocircuito `ALPHA==0`, caché de `T_n`): resultados
-bit-idénticos, solo más rápido. No confíes en "se ve bien" para código de física.
+Toeplitz + caché, cortocircuito `ALPHA==0`, caché de `T_n`, caché del Bessel de
+la suma de red): resultados bit-idénticos, solo más rápido. No confíes en "se
+ve bien" para código de física.
+
+## Rendimiento: dónde se va el tiempo (perfilado, cut=12, n_suma=20)
+
+Por evaluación del determinante (0.287 s antes del caché de Bessel):
+`G0`/suma de red **57 %**, integrales `quad` de `T_n` **43 %**. Dentro de la
+suma de red, `jn(N+1, Qh_mod·a)` era el **98 %**.
+
+- **Caché del Bessel** (`suma_de_red.py`): el numerador
+  `jn(N+1,Qh·a)·exp(i·N·ang)` **no depende de la frecuencia** (solo `k0_` entra,
+  por el denominador y un prefactor), y `Qh` solo depende de `k`. En un barrido
+  en ω a `k` fijo se recalculaba en cada frecuencia. Cacheado ⇒ `G0` **21.6×**,
+  determinante completo **2.7×** (medido en proceso fresco, bit-idéntico).
+  Seguridad: solo se cachea para arreglos de `precompute_Qh` (registrados en
+  `_QH_IDS`); los "anillos" de `G0_convergente` siguen sin caché. Vaciar con
+  `sr.limpiar_cache_suma_red()`.
+- **Lo que queda**: los `quad` de `T_n` (ahora ~el 80 % del tiempo restante),
+  con `_bessel_diff_formula` llamado ~6400 veces por evaluación.
+- **NO está paralelizado** (ni `multiprocessing`, ni `joblib`, ni `numba`). El
+  bucle sobre `k` es vergonzosamente paralelo; ojo: paralelizar por procesos
+  rompe el caché compartido de `T_n` (que hoy se reutiliza entre todos los `k`).
 
 ## Git
 

@@ -5,6 +5,44 @@ from numpy.linalg import norm
 
 latt = 'hx'
 
+# ---------------------------------------------------------------------------
+# Cache de la parte de la suma de red que NO depende de la frecuencia.
+#
+# En S1_pre, el numerador  jn(N+1, Qh_mod*a) * exp(i*N*ang)  depende solo de
+# (N, Qh_mod, ang, a); la frecuencia entra unicamente por k0_ en el denominador
+# Qh*(Qh^2 - k0^2) y en un prefactor. Como Qh_mod/ang dependen solo de k (via
+# precompute_Qh), en un barrido en omega a k fijo -- que es exactamente lo que
+# hacen zeros_longitudinal_fullgrid y el metodo por autovalores -- ese Bessel se
+# estaba recalculando en CADA frecuencia. Medido con cut=12, n_suma=20: el
+# Bessel es el 98% del costo de la suma de red (0.168 s de 0.171 s por G0).
+#
+# Seguridad: el cache solo se aplica a arreglos producidos por precompute_Qh,
+# que quedan registrados en _QH_IDS. S1_pre tambien se llama desde
+# Bandas_Tools.G0_convergente con arreglos "de anillo" construidos aparte; esos
+# no estan registrados y se calculan sin cache, con el mismo resultado.
+# _QH_CACHE mantiene referencias fuertes a los arreglos, asi que sus id() son
+# estables y no pueden reciclarse mientras esten registrados.
+# ---------------------------------------------------------------------------
+_QH_CACHE = {}      # clave_qh -> (Qh_mod, ang)
+_QH_IDS = {}        # id(Qh_mod) -> clave_qh
+_NUM_CACHE = {}     # (clave_qh, N, a) -> jn(N+1, Qh*a) * exp(i*N*ang)
+_QH_MAX = 256       # tope de puntos k distintos guardados (FIFO)
+
+
+def limpiar_cache_suma_red():
+    """Vacia los caches de la suma de red (util en tests o si cambia la memoria
+    disponible). No afecta a los resultados, solo al tiempo de calculo."""
+    _QH_CACHE.clear(); _QH_IDS.clear(); _NUM_CACHE.clear()
+
+
+def _olvidar_qh(clave):
+    """Elimina una entrada de Qh y todos sus numeradores asociados."""
+    par = _QH_CACHE.pop(clave, None)
+    if par is not None:
+        _QH_IDS.pop(id(par[0]), None)
+    for k in [c for c in _NUM_CACHE if c[0] == clave]:
+        del _NUM_CACHE[k]
+
 def K(a, k, lattice = latt):
     """ Calcula el vector de Bloch para una red reciproca dada """
     if lattice == 'sq':
@@ -113,6 +151,14 @@ def precompute_Qh(a, k_vec, n, lattice='hx'):
     ang : ndarray, shape ((2n+1), (2n+1))
         Ángulo del vector (argumento de la parte compleja).
     """
+    # Memoizacion: Qh_mod/ang dependen solo de (a, k_vec, n, lattice). Devolver
+    # SIEMPRE los mismos objetos permite ademas cachear el Bessel en S1_pre
+    # (ver nota arriba); por eso el cache guarda referencias fuertes.
+    clave = (float(a), float(k_vec[0]), float(k_vec[1]), int(n), str(lattice))
+    en_cache = _QH_CACHE.get(clave)
+    if en_cache is not None:
+        return en_cache
+
     # Generamos malla de índices
     i_vals = np.arange(-n, n+1)
     l_vals = np.arange(-n, n+1)
@@ -133,6 +179,11 @@ def precompute_Qh(a, k_vec, n, lattice='hx'):
     # Módulo y ángulo de cada vector
     Qh_mod = np.linalg.norm(Qh, axis=2)
     ang = np.angle(Qh[..., 0] + 1j * Qh[..., 1])
+
+    if len(_QH_CACHE) >= _QH_MAX:                 # FIFO simple
+        _olvidar_qh(next(iter(_QH_CACHE)))
+    _QH_CACHE[clave] = (Qh_mod, ang)
+    _QH_IDS[id(Qh_mod)] = clave
     return Qh_mod, ang
 
 def S1_pre(N, k0_, Qh_mod, ang, a, lattice='hx'):
@@ -159,14 +210,27 @@ def S1_pre(N, k0_, Qh_mod, ang, a, lattice='hx'):
     complex
         Resultado de la suma ``S1`` vectorizada.
     """
-    # Calculamos J_N+1(Qh_mod * a) de forma vectorizada
-    bessel = jn(N + 1, Qh_mod * a)
+    # Numerador jn(N+1, Qh*a) * exp(i*N*ang): NO depende de la frecuencia, solo
+    # de (N, Qh_mod, ang, a). Se cachea cuando Qh_mod viene de precompute_Qh
+    # (unico caso en que su id() esta registrado y garantizado estable). Si
+    # llega un arreglo de otra procedencia -- p.ej. los "anillos" de
+    # G0_convergente -- se calcula igual que antes, sin cache.
+    clave_qh = _QH_IDS.get(id(Qh_mod))
+    num = None
+    if clave_qh is not None:
+        ckey = (clave_qh, int(N), float(a))
+        num = _NUM_CACHE.get(ckey)
+    if num is None:
+        # Calculamos J_N+1(Qh_mod * a) de forma vectorizada
+        bessel = jn(N + 1, Qh_mod * a)
+        # Numerador: jn(...) * exp(i N ang)
+        num = bessel * np.exp(1j * N * ang)
+        if clave_qh is not None:
+            _NUM_CACHE[ckey] = num
     # Denominador: Qh * (Qh^2 - k0_^2)
     denom = Qh_mod * (Qh_mod**2 - k0_**2)
     # Prevenir divisiones por cero
     denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
-    # Numerador: jn(...) * exp(i N ang)
-    num = bessel * np.exp(1j * N * ang)
     S_sum = np.sum(num / denom)
     area = a ** 2 if lattice == 'sq' else (np.sqrt(3) * a ** 2 / 2)
     return (S_sum * k0_ * 4 * (1j) ** (N + 1)) / area

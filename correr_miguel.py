@@ -51,8 +51,19 @@ CUT     = 6          # modos m in {-CUT..CUT}. 6 = el valor del main.py de Migue
                      # la banda plana de ~1.02 que protagoniza la Fig. 4.
 NBANDS  = 8          # nº de soluciones que guarda el solver por cada k
 N_SUMA  = 5          # terminos de la suma de red (convergencia de G0)
+WMIN    = 1e-3       # piso de omega normalizada a EXPLORAR
 WMAX    = 1.4        # tope de omega normalizada a EXPLORAR (el solver no busca mas arriba
                      # de esto; si subes YHI/ZOOM_YHI, sube WMAX tambien o no habra datos)
+# Para buscar SOLO en una franja (p.ej. la banda plana): WMIN=1.0, WMAX=1.1.
+# OJO 1: el nº de muestras es VENTANAS_POR_UNIDAD*(WMAX-WMIN), o sea la DENSIDAD
+#        se mantiene. Con una franja angosta quedan pocas muestras en total
+#        (100*0.1 = 10), asi que conviene SUBIR VENTANAS_POR_UNIDAD (p.ej. 1000
+#        -> 100 muestras en la franja, 10x mas fino que el barrido completo y
+#        aun asi mas rapido, porque la franja es 14x mas angosta).
+# OJO 2: el filtro de aceptacion del solver es  0 < w_norm < WMAX  (ver
+#        resolver_con_fsolve): el limite inferior es 0, NO WMIN. Si fsolve se
+#        desplaza hacia abajo puede devolver soluciones por debajo de WMIN;
+#        filtralas despues si te estorban.
 
 # Tolerancias del solver de Miguel (fsolve dentro de zeros_longitudinal_fullgrid):
 IMAG_TOL = 0.8       # descarta soluciones con |Im(omega)| mayor (fuga)
@@ -83,7 +94,7 @@ print("Red lista: %s  psi=%.2f  nk=%d cut=%d nbands=%d" % (LATTICE, PSI, NK, CUT
 #   C_l0 = Ct0 = vel0[1] = 295 -> normaliza el eje a omega*a/2pi*Ct0
 r.zeros_longitudinal_fullgrid(C_l0=float(r.vel0[1]),
                               ventanas_por_unidad=VENTANAS_POR_UNIDAD,
-                              w_norm_max=WMAX)
+                              w_norm_min=WMIN, w_norm_max=WMAX)
 # post_process modifica r.omega_longitudinal in-place; backup en
 # r._omega_backup_postprocess (deshacer: r.omega_longitudinal = r._omega_backup_postprocess.copy())
 post_process(r, completar=COMPLETAR, graficar=False)   # graficar=False: usamos plot_bands abajo

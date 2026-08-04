@@ -82,6 +82,120 @@ def imtol_auto(im, wn, fallback=IMTOL):
     return float(np.sqrt(v[j] * v[j + 1]))
 
 
+def _encadenar(wn, dw_step):
+    """Agrupa los puntos finitos en cadenas ~ bandas, enlazando columnas de k
+    adyacentes por cercania en omega (greedy, tolerancia dw_step).
+    Devuelve dict {label: [(i, n), ...]} ordenado por k creciente."""
+    nk, nb = wn.shape
+    fin = np.isfinite(wn)
+    chains, nxt, prev = {}, 0, []
+    for i in range(nk):
+        cur = [(n, wn[i, n]) for n in range(nb) if fin[i, n]]
+        pares = []
+        for (n2, w2) in cur:
+            for (n1, w1, l1) in prev:
+                dd = abs(w2 - w1)
+                if dd <= dw_step:
+                    pares.append((dd, n1, l1, n2))
+        pares.sort(key=lambda t: t[0])
+        up, uc, asig = set(), set(), {}
+        for dd, n1, l1, n2 in pares:
+            if n1 in up or n2 in uc:
+                continue
+            up.add(n1); uc.add(n2); asig[n2] = l1
+        prev = []
+        for (n2, w2) in cur:
+            l = asig.get(n2)
+            if l is None:
+                l = nxt; nxt += 1; chains[l] = []
+            chains[l].append((i, n2))
+            prev.append((n2, w2, l))
+    return chains
+
+
+def _curvas_red_vacia(k, lattice, a, shells=3, wmax=2.0):
+    """Bandas de red vacia w_norm(k) = |k_vec(k)+G|*a/2pi sobre la malla k."""
+    import suma_de_red as sr
+    kv = np.array([sr.K(a, x, lattice) for x in k])
+    out = []
+    for k1 in range(-shells, shells + 1):
+        for k2 in range(-shells, shells + 1):
+            G = sr.Kh(a, k1, k2, lattice)
+            w = np.linalg.norm(kv + G[None, :], axis=1) * a / (2 * np.pi)
+            if w.min() <= wmax:
+                out.append(w)
+    return np.array(out)
+
+
+def filtro_consenso(k, wn, im, lattice="sq", a=1.0, dw_step=0.05,
+                    el_tol=0.018, el_persist=2, el_min_vecinos=2, el_floor=0.10,
+                    shells=3, min_cadena=4, ventana=3, factor=20.0,
+                    piso=0.01, imtol_max=1.0, verbose=False):
+    """CONSENSO entre criterios INDEPENDIENTES (lo que pidio el usuario, pero
+    sobre evidencia distinta en cada uno). Un punto se conserva si pasa los
+    tres:
+
+      1. GEOMETRIA  no es un fantasma de red vacia: no esta a menos de `el_tol`
+                    de una curva |k+G| que ademas este poblada en columnas de k
+                    vecinas (tubo + persistencia, el criterio de
+                    postprocess_miguel.detectar_fantasmas). Proteccion el_floor
+                    cerca de Gamma, donde G=0 y la acustica convergen.
+      2. FUGA       su |Im(mu)| es consistente con el de su banda
+                    (filtro_im_por_banda); las cadenas cortas caen al umbral
+                    escalar imtol_auto.
+      3. CONTINUIDAD pertenece a una cadena de al menos `min_cadena` puntos, o
+                    bien sobrevive el umbral escalar si es corta.
+
+    Por que asi y no votando entre imtol fijo/'auto'/'banda': esos tres son
+    umbrales sobre la MISMA cantidad y estan anidados (verificado: auto ⊆ fijo
+    ⊆ banda en los 5 psi), de modo que su interseccion es identica a 'auto' y
+    no aporta informacion. El consenso solo sirve entre evidencias distintas.
+
+    Devuelve (keep, info) con info = conteos por criterio."""
+    nk, nb = wn.shape
+    fin = np.isfinite(wn) & np.isfinite(im)
+    chains = _encadenar(wn, dw_step)
+
+    # --- 1) geometria: fantasmas de red vacia -------------------------------
+    curvas = _curvas_red_vacia(k, lattice, a, shells=shells)
+    en_tubo = np.array([np.any(np.abs(wn - c[:, None]) < el_tol, axis=1) for c in curvas])
+    es_fantasma = np.zeros((nk, nb), dtype=bool)
+    for ci, c in enumerate(curvas):
+        cerca = fin & (np.abs(wn - c[:, None]) < el_tol)
+        if not cerca.any():
+            continue
+        for i, n in np.argwhere(cerca):
+            if wn[i, n] < el_floor and abs(c[i]) < el_floor:
+                continue                       # proteccion acustica cerca de Gamma
+            j0, j1 = max(0, i - el_persist), min(nk, i + el_persist + 1)
+            vec = sum(1 for j in range(j0, j1) if j != i and en_tubo[ci][j])
+            if vec >= el_min_vecinos:
+                es_fantasma[i, n] = True
+
+    # --- 2) fuga por banda + 3) continuidad ---------------------------------
+    keep_fuga = filtro_im_por_banda(k, wn, im, dw_step=dw_step, ventana=ventana,
+                                    factor=factor, min_cadena=min_cadena,
+                                    imtol_max=imtol_max, piso=piso)
+    en_cadena_larga = np.zeros((nk, nb), dtype=bool)
+    for pts in chains.values():
+        if len(pts) >= min_cadena:
+            for (i, n) in pts:
+                en_cadena_larga[i, n] = True
+    thr = imtol_auto(im, wn)
+    keep_cont = en_cadena_larga | (fin & (im <= thr))
+
+    keep = fin & ~es_fantasma & keep_fuga & keep_cont
+    info = {"crudo": int(fin.sum()), "fantasmas": int((fin & es_fantasma).sum()),
+            "rechaza_fuga": int((fin & ~keep_fuga).sum()),
+            "rechaza_cont": int((fin & ~keep_cont).sum()),
+            "final": int(keep.sum()), "imtol_solitarios": thr}
+    if verbose:
+        print("   [consenso] crudo=%d  fantasmas=-%d  fuga=-%d  continuidad=-%d  -> %d"
+              % (info["crudo"], info["fantasmas"], info["rechaza_fuga"],
+                 info["rechaza_cont"], info["final"]))
+    return keep, info
+
+
 def filtro_im_por_banda(k, wn, im, dw_step=0.05, ventana=3, factor=20.0,
                         min_cadena=4, imtol_solitarios=None, imtol_max=1.0,
                         piso=0.01):
@@ -181,8 +295,9 @@ def filtro_im_por_banda(k, wn, im, dw_step=0.05, ventana=3, factor=20.0,
 
 def load(npz, imtol=IMTOL):
     """imtol: numero (corte fijo de |Im(mu)|), 'auto' (umbral escalar
-    adaptativo POR PSI via imtol_auto) o 'banda' (consistencia de |Im| dentro
-    de cada banda via filtro_im_por_banda; el mas fiel al curado a mano).
+    adaptativo POR PSI via imtol_auto), 'banda' (consistencia de |Im| dentro de
+    cada banda; PERMISIVO, ver su docstring) o 'consenso' (geometria |k+G| +
+    fuga por banda + continuidad; el mas limpio de una pasada).
     En los modos no numericos se imprime lo decidido por serie."""
     d = np.load(npz, allow_pickle=True)
     lattice = str(d["lattice"]); a = float(d["a"]); Ct0 = float(d["Ct0"])
@@ -194,7 +309,12 @@ def load(npz, imtol=IMTOL):
         kk = np.array(d["k_%d" % i])
         if ("im_%d" % i) in d.files:
             im = np.array(d["im_%d" % i])
-            if isinstance(imtol, str) and imtol == "banda":
+            if isinstance(imtol, str) and imtol == "consenso":
+                print("[plot_bands] psi=%.1f:" % float(psis[i]))
+                keep, _ = filtro_consenso(kk, wn, im, lattice=lattice, a=a,
+                                          verbose=True)
+                wn[~keep] = np.nan
+            elif isinstance(imtol, str) and imtol == "banda":
                 keep = filtro_im_por_banda(kk, wn, im)
                 n0 = int(np.isfinite(wn).sum())
                 wn[~keep] = np.nan

@@ -446,13 +446,17 @@ def clean_isolated(xs, ys, dx, dy, min_neigh=2):
     return keep
 
 
-def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title, clean=True):
+def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title, clean=True,
+          vlines=True, ms=3.2, fs_title=12, fs_tick=10):
     """clean=True aplica el filtro clean_isolated (quita puntos sin >=2
     vecinos): apropiado para la salida CRUDA del metodo por autovalores.
     clean=False lo SALTA: usalo con datos ya curados (p.ej. tras
     postprocess_miguel.post_process, o bandas editadas a mano) -- si no, el
     filtro vuelve a borrar los puntos de banda plana insertados, que en la
-    grilla equiespaciada quedan mas separados y parecen 'aislados'."""
+    grilla equiespaciada quedan mas separados y parecen 'aislados'.
+
+    vlines=False quita las lineas verticales en los puntos de alta simetria
+    (las figuras del articulo no las llevan)."""
     order, x, ticks, labels = path_order(lattice, k, a)
     wn = wn_raw[order, :]
     xx, yy = [], []
@@ -466,22 +470,56 @@ def panel(ax, lattice, a, Ct0, k, wn_raw, ylo, yhi, title, clean=True):
     else:
         keep = np.ones(len(xx), dtype=bool)
     vis = keep & (yy >= ylo-0.05) & (yy <= yhi+0.05)
-    ax.plot(xx[vis], yy[vis], ".", color="k", ms=3.2)
-    for t in ticks:
-        ax.axvline(t, color="0.6", lw=0.6, zorder=0)
+    ax.plot(xx[vis], yy[vis], ".", color="k", ms=ms)
+    if vlines:
+        for t in ticks:
+            ax.axvline(t, color="0.6", lw=0.6, zorder=0)
     ax.set_xticks(ticks); ax.set_xticklabels(labels)
     ax.set_xlim(ticks[0], ticks[-1]); ax.set_ylim(ylo, yhi)
-    ax.set_title(title, fontsize=12); ax.tick_params(labelsize=10)
+    ax.set_title(title, fontsize=fs_title); ax.tick_params(labelsize=fs_tick)
 
 
-def _grid_fig(lattice, a, Ct0, series, ylo, yhi, suptitle, clean=True):
+# Proporcion de la CAJA del panel medida sobre las Figs. 3-4 de Miguel:
+# ~370 x 235 px -> alto/ancho = 0.635. Se fija con ax.set_box_aspect(), que
+# actua sobre los ejes y no sobre la figura entera, asi que no depende de
+# cuanto espacio ocupen etiquetas y titulo. El zoom queda del MISMO tamaño
+# fisico que la figura completa, como en el articulo.
+BOX_ASPECT_ARTICULO = 0.635
+PANEL_ARTICULO = (3.1, 2.4)     # pulgadas (w, h) por panel, antes de etiquetas
+
+
+def _yticks_bonitos(ylo, yhi):
+    """Paso de tick 'redondo' segun el rango: 0.2 para el rango completo
+    (0-1.4) y 0.1 para el zoom (0.7-1.2), como en las Figs. 3 y 4."""
+    r = yhi - ylo
+    paso = 0.2 if r > 0.75 else (0.1 if r > 0.3 else 0.05)
+    n0 = np.ceil(round(ylo / paso, 9))
+    return np.arange(n0 * paso, yhi + 1e-9, paso)
+
+
+def _grid_fig(lattice, a, Ct0, series, ylo, yhi, suptitle, clean=True,
+              estilo="default"):
+    """estilo='default': como venia (lineas verticales, suptitle, panel 3.0x3.8).
+    estilo='articulo': sin lineas verticales, sin suptitle, caja del panel con
+    la proporcion de las Figs. 3-4 de Miguel, ticks de y cada 0.2 (0.1 en el
+    zoom) y xlabel 'ka'."""
     n = len(series)
-    fig, axes = plt.subplots(1, n, figsize=(3.0*n, 3.8), sharey=True)
+    art = (estilo == "articulo")
+    pw, ph = PANEL_ARTICULO if art else (3.0, 3.8)
+    fig, axes = plt.subplots(1, n, figsize=(pw*n, ph), sharey=True)
     if n == 1: axes = [axes]
     for ax, (psi, k, wn) in zip(axes, series):
-        panel(ax, lattice, a, Ct0, k, wn, ylo, yhi, r"$\psi=%.1f$" % psi, clean=clean)
-    axes[0].set_ylabel(r"$\omega a/2\pi C_{t0}$", fontsize=13)
-    fig.suptitle(suptitle, fontsize=13, y=1.02)
+        panel(ax, lattice, a, Ct0, k, wn, ylo, yhi, r"$\psi=%.1f$" % psi,
+              clean=clean, vlines=not art,
+              ms=2.6 if art else 3.2, fs_title=11 if art else 12,
+              fs_tick=9 if art else 10)
+        if art:
+            ax.set_xlabel(r"$ka$", fontsize=10)
+            ax.set_yticks(_yticks_bonitos(ylo, yhi))
+            ax.set_box_aspect(BOX_ASPECT_ARTICULO)
+    axes[0].set_ylabel(r"$\omega a/2\pi C_{t0}$", fontsize=11 if art else 13)
+    if not art:
+        fig.suptitle(suptitle, fontsize=13, y=1.02)
     fig.tight_layout()
     return fig
 
@@ -510,7 +548,7 @@ def guardar_filtrado(npz_in, npz_out, imtol="union"):
 
 
 def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=True,
-                 zoom_ylo=0.7, zoom_yhi=1.2):
+                 zoom_ylo=0.7, zoom_yhi=1.2, estilo="default", psis_sel=None):
     """Genera <prefix>_full.png (rango ylo-yhi) y <prefix>_zoom.png (rango
     zoom_ylo-zoom_yhi). Devuelve (fig_full, fig_zoom). show=True los muestra
     (VSCode/Jupyter).
@@ -518,16 +556,27 @@ def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=T
     clean=True: filtro clean_isolated ON (salida cruda del metodo por
     autovalores). clean=False: OFF, para datos YA curados (exportados tras
     postprocess_miguel.post_process o edicion a mano) -- si no, se re-borran
-    los puntos de banda plana insertados."""
+    los puntos de banda plana insertados.
+
+    estilo='articulo': sin lineas verticales de alta simetria, sin titulo
+    general, panel con la proporcion de las Figs. 3-4 de Miguel (1.55:1) y el
+    zoom del MISMO tamaño fisico que la figura completa, con xlabel 'ka'.
+    psis_sel: lista de psi a incluir (p.ej. [0.0, 0.8] para replicar la
+    Fig. 3); None = todos los del .npz."""
     lattice, a, Ct0, series = load(npz, imtol=imtol)
+    if psis_sel is not None:
+        sel = [min(series, key=lambda s: abs(s[0] - p)) for p in psis_sel]
+        series = sel
     latname = {"sq": "cuadrada", "hx": "triangular"}.get(lattice, lattice)
     for p in {os.path.dirname(prefix)} - {""}:
         os.makedirs(p, exist_ok=True)
     ttl = "Estructura de bandas — red %s  ($r_1{=}0.45a,\\ r_2{=}0.5a$)" % latname
-    fig_full = _grid_fig(lattice, a, Ct0, series, ylo, yhi, ttl, clean=clean)
+    fig_full = _grid_fig(lattice, a, Ct0, series, ylo, yhi, ttl, clean=clean,
+                         estilo=estilo)
     fig_full.savefig(prefix + "_full.png", dpi=160, bbox_inches="tight")
     zoom_ttl = "Zoom (%.1f–%.1f) — red %s" % (zoom_ylo, zoom_yhi, latname)
-    fig_zoom = _grid_fig(lattice, a, Ct0, series, zoom_ylo, zoom_yhi, zoom_ttl, clean=clean)
+    fig_zoom = _grid_fig(lattice, a, Ct0, series, zoom_ylo, zoom_yhi, zoom_ttl,
+                         clean=clean, estilo=estilo)
     fig_zoom.savefig(prefix + "_zoom.png", dpi=160, bbox_inches="tight")
     print("->", prefix + "_full.png", "/", prefix + "_zoom.png")
     if show:

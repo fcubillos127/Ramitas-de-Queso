@@ -196,6 +196,76 @@ def filtro_consenso(k, wn, im, lattice="sq", a=1.0, dw_step=0.05,
     return keep, info
 
 
+def filtro_fusion(k, wn, im, lattice="sq", a=1.0, imtol_base=0.12,
+                  dw_step=0.05, max_hueco=3, min_apoyo=3, imtol_rescate=1.0,
+                  evitar_fantasmas=True, el_tol=0.018, el_persist=2,
+                  el_min_vecinos=2, el_floor=0.10, shells=3, verbose=False):
+    """FUSION DIRIGIDA: `imtol_base` (0.12) manda, y solo se RESCATAN los
+    puntos que COMPLETAN una banda ya presente en esa base.
+
+    Motivacion (observacion del usuario sobre las figuras): con IMTOL=0.12
+    faltan tramos de las bandas 2 y 3 cerca de M que el criterio por banda si
+    encuentra. Pero la union simple no sirve -- 'banda' contiene a 'fijo'
+    (verificado: auto ⊆ fijo ⊆ banda en los 5 psi), asi que unir daria la
+    version permisiva completa, con toda su maraña. Lo que hace falta es
+    rescatar solo lo que CONTINUA algo que ya existe.
+
+    Un punto fuera de la base se acepta si cumple TODO:
+      a) |Im(mu)| <= imtol_rescate  (techo del rescate; nunca basura extrema)
+      b) pertenece a una cadena (continuidad en omega, tolerancia dw_step) que
+         ya tiene >= `min_apoyo` puntos DENTRO de la base  -> esta completando
+         una banda existente, no inventando una nueva
+      c) esta a <= `max_hueco` pasos de k de un punto de la base de SU MISMA
+         cadena -> rellena un hueco, no extiende la banda indefinidamente
+      d) si evitar_fantasmas: no esta sobre una curva de red vacia |k+G|
+         poblada en los k vecinos
+
+    Devuelve (keep, info)."""
+    nk, nb = wn.shape
+    fin = np.isfinite(wn) & np.isfinite(im)
+    base = fin & (im <= imtol_base)
+    chains = _encadenar(wn, dw_step)
+
+    # (d) geometria
+    es_fantasma = np.zeros((nk, nb), dtype=bool)
+    if evitar_fantasmas:
+        curvas = _curvas_red_vacia(k, lattice, a, shells=shells)
+        en_tubo = np.array([np.any(np.abs(wn - c[:, None]) < el_tol, axis=1)
+                            for c in curvas])
+        for ci, c in enumerate(curvas):
+            for i, n in np.argwhere(fin & (np.abs(wn - c[:, None]) < el_tol)):
+                if wn[i, n] < el_floor and abs(c[i]) < el_floor:
+                    continue
+                j0, j1 = max(0, i - el_persist), min(nk, i + el_persist + 1)
+                if sum(1 for j in range(j0, j1) if j != i and en_tubo[ci][j]) >= el_min_vecinos:
+                    es_fantasma[i, n] = True
+
+    keep = base.copy()
+    n_resc = 0
+    for pts in chains.values():
+        idx_base = [j for j, (i, n) in enumerate(pts) if base[i, n]]
+        if len(idx_base) < min_apoyo:          # (b) sin apoyo suficiente
+            continue
+        ks_base = [pts[j][0] for j in idx_base]
+        for j, (i, n) in enumerate(pts):
+            if base[i, n] or not fin[i, n]:
+                continue
+            if im[i, n] > imtol_rescate:       # (a)
+                continue
+            if min(abs(i - kb) for kb in ks_base) > max_hueco:   # (c)
+                continue
+            if es_fantasma[i, n]:              # (d)
+                continue
+            keep[i, n] = True
+            n_resc += 1
+    info = {"crudo": int(fin.sum()), "base": int(base.sum()),
+            "rescatados": n_resc, "final": int(keep.sum())}
+    if verbose:
+        print("   [fusion] crudo=%d  base(imtol<=%.2f)=%d  +rescatados=%d  -> %d"
+              % (info["crudo"], imtol_base, info["base"], n_resc, info["final"]))
+    return keep, info
+
+
 def filtro_im_por_banda(k, wn, im, dw_step=0.05, ventana=3, factor=20.0,
                         min_cadena=4, imtol_solitarios=None, imtol_max=1.0,
                         piso=0.01):
@@ -309,7 +379,12 @@ def load(npz, imtol=IMTOL):
         kk = np.array(d["k_%d" % i])
         if ("im_%d" % i) in d.files:
             im = np.array(d["im_%d" % i])
-            if isinstance(imtol, str) and imtol == "consenso":
+            if isinstance(imtol, str) and imtol == "fusion":
+                print("[plot_bands] psi=%.1f:" % float(psis[i]))
+                keep, _ = filtro_fusion(kk, wn, im, lattice=lattice, a=a,
+                                        verbose=True)
+                wn[~keep] = np.nan
+            elif isinstance(imtol, str) and imtol == "consenso":
                 print("[plot_bands] psi=%.1f:" % float(psis[i]))
                 keep, _ = filtro_consenso(kk, wn, im, lattice=lattice, a=a,
                                           verbose=True)

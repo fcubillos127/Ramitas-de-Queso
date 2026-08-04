@@ -486,6 +486,29 @@ def _grid_fig(lattice, a, Ct0, series, ylo, yhi, suptitle, clean=True):
     return fig
 
 
+def guardar_filtrado(npz_in, npz_out, imtol="union"):
+    """Aplica un filtro de fuga y guarda el resultado en un .npz nuevo, para
+    seguir editando a mano (bridge_to_omega.eig_to_red -> delete_point).
+
+    OJO: los filtros que usan |Im(mu)| ('auto', 'banda', 'consenso', 'fusion',
+    'union') solo tienen efecto sobre .npz del METODO POR AUTOVALORES
+    (compute_driver.run), que guarda im_i de verdad. Los .npz exportados desde
+    el solver de Miguel con bridge_to_omega.red_to_eig_npz llevan im_i = 0 y
+    para ellos todos esos modos son un no-op (dejan pasar todo)."""
+    lattice, a, Ct0, series = load(npz_in, imtol=imtol)
+    d = {"lattice": lattice, "a": a, "Ct0": Ct0, "wmax": 1.4,
+         "psis": np.array([p for p, _, _ in series])}
+    for i, (psi, k, wn) in enumerate(series):
+        d["k_%d" % i] = k
+        d["wn_%d" % i] = wn
+        d["im_%d" % i] = np.zeros_like(wn)   # ya filtrado: no re-filtrar despues
+    np.savez(npz_out, **d)
+    n = sum(int(np.isfinite(w).sum()) for _, _, w in series)
+    print("[guardar_filtrado] %s -> %s  (%d puntos, imtol=%s)"
+          % (npz_in, npz_out, n, imtol))
+    return npz_out
+
+
 def make_figures(npz, prefix, ylo=0.0, yhi=1.4, imtol=IMTOL, show=False, clean=True,
                  zoom_ylo=0.7, zoom_yhi=1.2):
     """Genera <prefix>_full.png (rango ylo-yhi) y <prefix>_zoom.png (rango

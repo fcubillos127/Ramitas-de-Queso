@@ -54,7 +54,37 @@ def path_order(lattice, k, a):
     return np.concatenate(order_parts), np.concatenate(x_parts), [0, 1, 2, 3], labels
 
 
+def imtol_auto(im, wn, fallback=IMTOL):
+    """Umbral ADAPTATIVO de |Im(mu)| para UNA serie (un psi): el mayor salto
+    de log10|Im| en el tramo central de la distribucion (percentiles 30-98).
+
+    Por que dinamico y no fijo (idea de Miguel, verificada con datos reales de
+    bands_sq_c7.npz, nk=70, cut=7): el umbral natural que separa las bandas
+    propagantes de la fuga SE MUEVE con psi -- 0.006 (psi=0), 0.047 (0.2),
+    0.057 (0.4), 0.117 (0.6), 0.123 (0.8), un factor ~20 -- porque la
+    pre-deformacion acopla modos y hace mas 'fugaz' todo el espectro. Un IMTOL
+    fijo o corta bandas reales en psi alto o deja pasar fuga en psi bajo.
+
+    Limite honesto: la distribucion no siempre es nitidamente bimodal (los
+    saltos son modestos), asi que el umbral elegido puede fluctuar entre
+    datasets; por eso se imprime SIEMPRE el valor usado. Si falla, pasar un
+    imtol numerico."""
+    m = np.isfinite(wn) & np.isfinite(im) & (im > 1e-12)
+    v = np.sort(im[m])
+    if v.size < 20:
+        return float(fallback)
+    lv = np.log10(v)
+    j0, j1 = int(0.30 * len(lv)), int(0.98 * len(lv))
+    if j1 - j0 < 2:
+        return float(fallback)
+    dif = np.diff(lv[j0:j1])
+    j = int(np.argmax(dif)) + j0
+    return float(np.sqrt(v[j] * v[j + 1]))
+
+
 def load(npz, imtol=IMTOL):
+    """imtol: numero (corte fijo de |Im(mu)|) o 'auto' (umbral adaptativo POR
+    PSI via imtol_auto; imprime el valor elegido para cada serie)."""
     d = np.load(npz, allow_pickle=True)
     lattice = str(d["lattice"]); a = float(d["a"]); Ct0 = float(d["Ct0"])
     psis = d["psis"]; out = []
@@ -63,7 +93,13 @@ def load(npz, imtol=IMTOL):
             continue
         wn = np.array(d["wn_%d" % i]).copy()
         if ("im_%d" % i) in d.files:
-            wn[np.array(d["im_%d" % i]) > imtol] = np.nan
+            im = np.array(d["im_%d" % i])
+            if isinstance(imtol, str) and imtol == "auto":
+                thr = imtol_auto(im, wn)
+                print("[plot_bands] psi=%.1f: imtol auto = %.4f" % (float(psis[i]), thr))
+            else:
+                thr = float(imtol)
+            wn[im > thr] = np.nan
         out.append((float(psis[i]), np.array(d["k_%d" % i]), wn))
     return lattice, a, Ct0, out
 

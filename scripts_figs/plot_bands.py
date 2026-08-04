@@ -196,6 +196,30 @@ def filtro_consenso(k, wn, im, lattice="sq", a=1.0, dw_step=0.05,
     return keep, info
 
 
+def filtro_union(k, wn, im, imtol_base=0.12, verbose=False, **kw_banda):
+    """UNION SIMPLE: todos los puntos de la base (|Im| <= imtol_base) MAS todos
+    los que encuentra el criterio por banda. Es el "copiar y pegar" literal:
+    se agregan los que la base perdio, sin filtrar cuales.
+
+    Medido sobre bands_sq_c7.npz: la union queda muy cerca del criterio por
+    banda a secas (identica en psi=0.6 y 0.8; +8 a +18 puntos en psi=0/0.2/0.4,
+    que son los que 'banda' descartaba y la base si tenia). O sea el resultado
+    se parece mucho a la fila 'banda' de la comparacion, con su maraña
+    incluida. Si eso resulta demasiado sucio, filtro_fusion() hace lo mismo
+    pero rescatando solo lo que COMPLETA bandas ya presentes en la base."""
+    fin = np.isfinite(wn) & np.isfinite(im)
+    base = fin & (im <= imtol_base)
+    extra = filtro_im_por_banda(k, wn, im, **kw_banda) & fin
+    keep = base | extra
+    info = {"crudo": int(fin.sum()), "base": int(base.sum()),
+            "solo_banda": int((extra & ~base).sum()),
+            "solo_base": int((base & ~extra).sum()), "final": int(keep.sum())}
+    if verbose:
+        print("   [union] base(imtol<=%.2f)=%d  +solo en 'banda'=%d  -> %d"
+              % (imtol_base, info["base"], info["solo_banda"], info["final"]))
+    return keep, info
+
+
 def filtro_fusion(k, wn, im, lattice="sq", a=1.0, imtol_base=0.12,
                   dw_step=0.05, max_hueco=3, min_apoyo=3, imtol_rescate=1.0,
                   evitar_fantasmas=True, el_tol=0.018, el_persist=2,
@@ -379,7 +403,11 @@ def load(npz, imtol=IMTOL):
         kk = np.array(d["k_%d" % i])
         if ("im_%d" % i) in d.files:
             im = np.array(d["im_%d" % i])
-            if isinstance(imtol, str) and imtol == "fusion":
+            if isinstance(imtol, str) and imtol == "union":
+                print("[plot_bands] psi=%.1f:" % float(psis[i]))
+                keep, _ = filtro_union(kk, wn, im, verbose=True)
+                wn[~keep] = np.nan
+            elif isinstance(imtol, str) and imtol == "fusion":
                 print("[plot_bands] psi=%.1f:" % float(psis[i]))
                 keep, _ = filtro_fusion(kk, wn, im, lattice=lattice, a=a,
                                         verbose=True)

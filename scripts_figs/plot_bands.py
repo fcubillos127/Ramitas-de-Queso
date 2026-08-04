@@ -82,9 +82,108 @@ def imtol_auto(im, wn, fallback=IMTOL):
     return float(np.sqrt(v[j] * v[j + 1]))
 
 
+def filtro_im_por_banda(k, wn, im, dw_step=0.05, ventana=3, factor=20.0,
+                        min_cadena=4, imtol_solitarios=None, imtol_max=1.0,
+                        piso=0.01):
+    """Filtro de fuga POR BANDA en vez de por figura (prototipo, idea de
+    Miguel llevada un paso mas alla del umbral escalar adaptativo):
+
+    un punto se acepta si su |Im(mu)| es CONSISTENTE con el de sus vecinos de
+    la misma banda a lo largo de k. La fuga es una propiedad suave de cada
+    banda (una resonancia plana puede tener |Im|~0.5 uniforme en toda la zona
+    y ser perfectamente fisica); los espurios saltan respecto de su contexto.
+    Un umbral escalar -- fijo o 'auto' -- no puede distinguir esos dos casos:
+    o mata la banda fugaz coherente o deja pasar el punto suelto.
+
+    Algoritmo:
+      1. ENCADENAR: se enlazan puntos de columnas de k adyacentes por cercania
+         en omega (greedy, tolerancia dw_step) formando cadenas ~ bandas.
+      2. CONSISTENCIA LOCAL: dentro de cada cadena de largo >= min_cadena, un
+         punto se rechaza si su log10|Im| excede la mediana de sus `ventana`
+         vecinos de cadena en mas de log10(factor) (solo por EXCESO: fuga
+         anomalamente chica no es sospechosa).
+      3. Cadenas cortas (< min_cadena) no tienen contexto de banda: se les
+         aplica el umbral escalar `imtol_solitarios` (default: imtol_auto).
+      4. Techo absoluto `imtol_max`: |Im(mu)| mayor se rechaza SIEMPRE, aunque
+         la cadena entera sea consistente -- una cadena de basura coherente
+         (p.ej. cruces pegados a un polo) se auto-validaria sin esto.
+
+    `piso`: se compara log10(max(|Im|, piso)). IMPRESCINDIBLE -- las bandas
+    propagantes tienen |Im| ~ 1e-16 y sin piso las razones estallan sin
+    significado fisico (medido: max 41000x sin piso vs 56x con piso=0.01).
+    Calibracion de `factor` con piso=0.01 sobre datos reales (nk=70, cut=7):
+    el salto dentro de una cadena esta en p95 ~ 4-12x y p99 ~ 19-30x, de ahi
+    el default 20 (rechaza aprox. el 1% mas anomalo de cada cadena).
+
+    Devuelve una mascara booleana keep (nk, nb). Solo aplica al metodo por
+    autovalores (los datos del solver de Miguel no traen |Im(mu)|).
+
+    ⚠️ RESULTADO DEL PROTOTIPO (medido, no teorico): comparado con imtol='auto'
+    sobre bands_sq_c7.npz, este filtro RESCATA 154-257 puntos por psi y no quita
+    ninguno -- o sea es mas PERMISIVO, no mas limpio, y la figura sale mas
+    ruidosa. Rescata correctamente bandas de fuga coherentes (p.ej. la plana en
+    w~1.207 con |Im|~0.58 sostenido en muchos k, que 'auto' cortaba), pero
+    ~50% de lo que rescata cae sobre curvas de red vacia |k+G|: son cadenas de
+    fantasmas COHERENTES, y la coherencia sola no implica que sean fisicas.
+    Conclusion: util como criterio de RESCATE cuando sabes que hay bandas
+    fugaces reales, pero NO sustituye al filtro geometrico de red vacia
+    (detectar_fantasmas en postprocess_miguel). Para figuras limpias de una
+    sola pasada sigue ganando imtol='auto'."""
+    nk, nb = wn.shape
+    keep = np.zeros((nk, nb), dtype=bool)
+    fin = np.isfinite(wn) & np.isfinite(im)
+
+    # 1) encadenar por continuidad en omega
+    chains = {}
+    nxt = 0
+    prev_pts = []                                # [(n, w, label)] de la columna anterior
+    label = -np.ones((nk, nb), dtype=int)
+    for i in range(nk):
+        cur = [(n, wn[i, n]) for n in range(nb) if fin[i, n]]
+        pairs = []
+        for (n2, w2) in cur:
+            for (n1, w1, lab1) in prev_pts:
+                d = abs(w2 - w1)
+                if d <= dw_step:
+                    pairs.append((d, n1, lab1, n2))
+        pairs.sort(key=lambda t: t[0])
+        used_prev, used_cur, asig = set(), set(), {}
+        for d, n1, lab1, n2 in pairs:
+            if n1 in used_prev or n2 in used_cur:
+                continue
+            used_prev.add(n1); used_cur.add(n2)
+            asig[n2] = lab1
+        prev_pts = []
+        for (n2, w2) in cur:
+            lab = asig.get(n2)
+            if lab is None:
+                lab = nxt; nxt += 1; chains[lab] = []
+            label[i, n2] = lab
+            chains[lab].append((i, n2))
+            prev_pts.append((n2, w2, lab))
+
+    # 2-4) filtrar
+    if imtol_solitarios is None:
+        imtol_solitarios = imtol_auto(im, wn)
+    for lab, pts in chains.items():
+        if len(pts) < min_cadena:
+            for (i, n) in pts:
+                keep[i, n] = (im[i, n] <= imtol_solitarios) and (im[i, n] <= imtol_max)
+            continue
+        logs = np.log10(np.maximum(np.array([im[i, n] for (i, n) in pts]), piso))
+        for j, (i, n) in enumerate(pts):
+            lo, hi = max(0, j - ventana), min(len(pts), j + ventana + 1)
+            vecinos = np.delete(logs[lo:hi], j - lo)
+            ref = np.median(vecinos)
+            keep[i, n] = (logs[j] <= ref + np.log10(factor)) and (im[i, n] <= imtol_max)
+    return keep
+
+
 def load(npz, imtol=IMTOL):
-    """imtol: numero (corte fijo de |Im(mu)|) o 'auto' (umbral adaptativo POR
-    PSI via imtol_auto; imprime el valor elegido para cada serie)."""
+    """imtol: numero (corte fijo de |Im(mu)|), 'auto' (umbral escalar
+    adaptativo POR PSI via imtol_auto) o 'banda' (consistencia de |Im| dentro
+    de cada banda via filtro_im_por_banda; el mas fiel al curado a mano).
+    En los modos no numericos se imprime lo decidido por serie."""
     d = np.load(npz, allow_pickle=True)
     lattice = str(d["lattice"]); a = float(d["a"]); Ct0 = float(d["Ct0"])
     psis = d["psis"]; out = []
@@ -92,15 +191,23 @@ def load(npz, imtol=IMTOL):
         if ("wn_%d" % i) not in d.files:
             continue
         wn = np.array(d["wn_%d" % i]).copy()
+        kk = np.array(d["k_%d" % i])
         if ("im_%d" % i) in d.files:
             im = np.array(d["im_%d" % i])
-            if isinstance(imtol, str) and imtol == "auto":
-                thr = imtol_auto(im, wn)
-                print("[plot_bands] psi=%.1f: imtol auto = %.4f" % (float(psis[i]), thr))
+            if isinstance(imtol, str) and imtol == "banda":
+                keep = filtro_im_por_banda(kk, wn, im)
+                n0 = int(np.isfinite(wn).sum())
+                wn[~keep] = np.nan
+                print("[plot_bands] psi=%.1f: filtro por banda: %d -> %d puntos"
+                      % (float(psis[i]), n0, int(np.isfinite(wn).sum())))
             else:
-                thr = float(imtol)
-            wn[im > thr] = np.nan
-        out.append((float(psis[i]), np.array(d["k_%d" % i]), wn))
+                if isinstance(imtol, str) and imtol == "auto":
+                    thr = imtol_auto(im, wn)
+                    print("[plot_bands] psi=%.1f: imtol auto = %.4f" % (float(psis[i]), thr))
+                else:
+                    thr = float(imtol)
+                wn[im > thr] = np.nan
+        out.append((float(psis[i]), kk, wn))
     return lattice, a, Ct0, out
 
 

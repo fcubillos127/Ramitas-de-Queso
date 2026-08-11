@@ -149,6 +149,28 @@ artefactos. Lo que sí es heurístico es todo filtro basado en `|Im μ|`.
   `1/μ→0` en vez de `→∞`): **peor**, 39 cruces vs 13, porque los *ceros* de μ
   generan la misma patología al revés.
 
+## ✅ Verificado: `cut` SATURA — la cantidad de bandas no crece indefinidamente
+
+Barrido `cut = 2..12` (sq, ψ=0.6, n_suma=5, nk=20, ngrid=600, con exclusión de
+polos activa). **Subir `cut` no agrega bandas sin fin: satura.**
+
+| cut | 2 | 3 | 4 | 5 | 6 | **7** | 8 | 10 | 12 |
+|---|---|---|---|---|---|---|---|---|---|
+| puntos genuinos | 98 | 77 | 90 | 86 | 88 | **90** | 90 | 90 | 90 |
+| error de frecuencia vs cut=12 | 1e-2…4e-1 | idem | 5e-3 | 4e-3 | 1e-3 | **1e-4** | 6e-5 | 2e-5 | — |
+| tiempo | 9 s | 14 s | 18 s | 23 s | 30 s | 34 s | 36 s | 48 s | 56 s |
+
+Lecturas importantes:
+- **A partir de `cut=7` el número de puntos es idéntico (90) y las frecuencias
+  coinciden a 1e-4.** `cut=12` da EXACTAMENTE lo mismo que `cut=8` y cuesta
+  1.6× más. **Recomendado: `cut = 7–8`.**
+- **`cut=2` da MÁS puntos (98) pero mal ubicados**: errores de hasta **0.36**
+  en ω (bandas en 0.607/0.649/1.240 donde lo convergido es 0.708/1.005/1.048).
+  O sea "más puntos" ≠ "mejor"; a `cut` bajo las bandas están sencillamente
+  equivocadas. Esto explica por qué `cut=2` no reproduce las Figs. 3–4.
+- La distribución por franja de ω se estabiliza desde `cut≈4`
+  (22/16/16/18/18 puntos en 0-0.5/0.5-0.8/0.8-1.0/1.0-1.2/1.2-1.4).
+
 ## ✅ Verificado: las bandas SÍ están convergidas en `n_suma`
 
 Antes se midió que las *entradas* de `G0` no convergen a `n_suma=20` y se

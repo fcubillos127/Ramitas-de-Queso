@@ -37,13 +37,19 @@ COND_BORDE = "hollow"
 def run(lattice, out, psis=PSIS, nk=NK, cut=CUT, ngrid=NGRID, wmax=WMAX,
         n_suma=N_SUMA, eta=ETA, imtol=IMTOL,
         imag_tol=IMAG_TOL, sol_tol=SOL_TOL, cond_borde=COND_BORDE,
-        r1=0.45, r2=0.5, filling=0.5, a=1.0):
-    """Calcula y guarda las bandas para todos los psi. Devuelve la ruta del .npz."""
+        r1=0.45, r2=0.5, filling=0.5, a=1.0, pole_tol=0.018, pole_floor=0.10):
+    """Calcula y guarda las bandas para todos los psi. Devuelve la ruta del .npz.
+
+    pole_tol: descarta EN LA BUSQUEDA los cruces que caen a menos de esa
+    distancia de un polo de la suma de red (w = |k+G|a/2pi, conocido en forma
+    cerrada). Asi los fantasmas no entran al .npz y no hay que filtrarlos
+    despues. pole_tol=0 recupera el comportamiento anterior."""
     d = os.path.dirname(out)
     if d:
         os.makedirs(d, exist_ok=True)
     data = {"lattice": lattice, "psis": np.array(psis), "a": a, "Ct0": CT0, "wmax": wmax,
-            "cut": cut, "n_suma": n_suma, "eta": eta, "imtol": imtol}
+            "cut": cut, "n_suma": n_suma, "eta": eta, "imtol": imtol,
+            "pole_tol": pole_tol}
     t_all = time.perf_counter()
     for i, psi in enumerate(psis):
         r = build_red(lattice, psi, cut=cut, nk=nk, n_suma=n_suma,
@@ -51,13 +57,17 @@ def run(lattice, out, psis=PSIS, nk=NK, cut=CUT, ngrid=NGRID, wmax=WMAX,
                        r1=r1, r2=r2, filling=filling, a=a)
         t0 = time.perf_counter()
         k_arr, wn, im = compute_bands_eig(r, nk=nk, wmax=wmax, ngrid=ngrid,
-                                           eta=eta, imtol=imtol)
+                                           eta=eta, imtol=imtol,
+                                           pole_tol=pole_tol, pole_floor=pole_floor)
         data["k_%d" % i] = k_arr
         data["wn_%d" % i] = wn
         data["im_%d" % i] = im
         np.savez(out, **data)   # guardado incremental
-        print("[%s] psi=%.1f  %.1f s  (%d pts)" % (lattice, psi, time.perf_counter()-t0,
-                                                   int(np.sum(np.isfinite(wn)))), flush=True)
+        n_pol = getattr(compute_bands_eig, "ultimo_n_polos", 0)
+        print("[%s] psi=%.1f  %.1f s  (%d pts%s)"
+              % (lattice, psi, time.perf_counter()-t0, int(np.sum(np.isfinite(wn))),
+                 "; %d cruces descartados por caer en polos" % n_pol if n_pol else ""),
+              flush=True)
     print("[%s] TOTAL %.1f s -> %s" % (lattice, time.perf_counter()-t_all, out), flush=True)
     return out
 

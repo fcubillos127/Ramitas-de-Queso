@@ -128,6 +128,43 @@ Backup completo en `red._omega_backup_postprocess` (deshacer todo). `+0 post`
 = ningún fantasma renació entre los insertados. NO usa
 `smooth_interpolate_longitudinal` ni `order_bands_by_continuity_global`.
 
+## Exclusión de polos DENTRO de la búsqueda (`compute_bands_eig(pole_tol=…)`)
+
+Los polos de la suma de red están en **forma cerrada**: `ω = |k+G|·a/2π`. Cerca
+de uno, un autovalor `μ` diverge y **barre el valor 1 de camino**, produciendo
+un cruce que no es banda. Medido (ψ=0.6, cut=12, un k típico): de 13 cruces,
+**6 caían sobre polos y solo 2 eran raíces genuinas**. Como se conocen exacto,
+`compute_bands_eig` los descarta durante la búsqueda (`pole_tol=0.018`), con
+protección `pole_floor=0.10` cerca de Γ (donde `G=0` y la acústica convergen).
+Verificado (sq, ψ=0.6, cut=7, nk=40): contaminación **26.8 % → 3.0 %** y
+**0 puntos físicos perdidos**. `pole_tol=0` recupera el comportamiento previo.
+
+Esto NO es una heurística: es la única información exacta disponible sobre los
+artefactos. Lo que sí es heurístico es todo filtro basado en `|Im μ|`.
+
+### Ideas descartadas (probadas, no funcionan)
+- **`σ_min` de `T·G0 − I`**: la matriz está pésimamente escalada (`G0` ~1e8),
+  σ_min sale ~0 en todas partes. Inservible sin renormalizar.
+- **Buscar `Re(1/μ)=1`** en vez de `Re(μ)=1` (mismas soluciones; en el polo
+  `1/μ→0` en vez de `→∞`): **peor**, 39 cruces vs 13, porque los *ceros* de μ
+  generan la misma patología al revés.
+
+## ✅ Verificado: las bandas SÍ están convergidas en `n_suma`
+
+Antes se midió que las *entradas* de `G0` no convergen a `n_suma=20` y se
+concluyó (mal) que había que mantenerlo alto. Lo que importa es la **frecuencia
+de banda**, y esa converge rapidísimo — de `n_suma=5` a `40` se mueve ~1e-4:
+
+| banda | n_suma=5 | n_suma=20 | n_suma=40 | \|5−40\| |
+|---|---|---|---|---|
+| acústica k/π=1.776 | 0.2683419 | 0.2682911 | 0.2682902 | 5e-5 |
+| óptica k/π=1.776 | 0.7191240 | 0.7190510 | 0.7190495 | 8e-5 |
+| plana ~1.02 | 1.0281999 | 1.0280802 | 1.0280779 | 1e-4 |
+
+`n_suma=5–8` basta para figuras; `n_suma=20` cuesta **14×** más en la suma de
+red sin ganar nada visible. (Ewald daría convergencia exponencial, pero dado
+esto el beneficio sería solo de velocidad, no de corrección física.)
+
 ## ⚠️ Verificado: subir `sol_tol` NO rellena vacíos (rellena con polos)
 
 `sol_tol` es el `xtol` de `fsolve` en `zeros_longitudinal_fullgrid`. Subirlo

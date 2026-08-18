@@ -6,14 +6,23 @@ Its only responsibility is to answer, for one fixed k:
     Which real frequencies make A(w,k) = T(w) G0(w,k) - I singular?
 
 The historical sign-change detector is retained as one source of candidate
-intervals, but it is supplemented by minima of the smallest singular value,
+intervals, but it is supplemented by minima of a singular-value residual,
 which can detect even-multiplicity roots that do not change the sign of det(A).
 
-Certification uses an *equilibrated* secular matrix.  Diagonal row/column
-scaling preserves rank and nullity exactly while removing misleading dynamic
-range (important near reciprocal-space poles and the low-frequency limit).
-Thus scipy/fsolve convergence and the raw magnitude of det(A) are diagnostics,
-not certificates.
+A robust certificate must survive two opposite numerical pathologies:
+
+* raw sigma_min(A) can become tiny merely because A has huge internal dynamic
+  range (notably in the low-frequency limit);
+* after diagonal equilibration, a reciprocal-space pole can be dominated by a
+  low-rank divergent contribution and *also* look nearly singular.
+
+Therefore the accepted residual is deliberately conservative:
+
+    R = max(sigma_min(A), sigma_min(D_r A D_c)).
+
+An authentic rank loss makes both quantities vanish.  Pure scaling artifacts
+and reciprocal-space poles make only one of them small.  Diagonal scaling is
+invertible away from exactly zero rows/columns and does not alter exact rank.
 """
 from __future__ import annotations
 
@@ -28,7 +37,9 @@ from scipy.optimize import minimize_scalar
 class RootCandidate:
     omega: float
     omega_norm: float
-    sigma_min: float
+    sigma_min: float          # conservative residual R=max(raw, balanced)
+    sigma_min_raw: float
+    sigma_min_balanced: float
     multiplicity: int
     det_abs: float
     source: str
@@ -49,14 +60,7 @@ def secular_matrix(red, omega: float, k: float, *, imag: float = 0.0):
 
 
 def equilibrate_matrix(A, passes: int = 8):
-    """Diagonally equilibrate rows and columns without changing matrix rank.
-
-    Each pass rescales by inverse square roots of row and column 2-norms.
-    All scale factors are finite and nonzero for nonzero rows/columns, so the
-    transformation B = D_r A D_c preserves the exact nullity of A.  The purpose
-    is numerical: a raw sigma_min can become tiny merely because some matrix
-    directions are O(omega^2) while others are O(omega^-2).
-    """
+    """Diagonally equilibrate rows and columns without changing matrix rank."""
     B = np.asarray(A, dtype=complex).copy()
     tiny = np.finfo(float).tiny
     for _ in range(max(0, int(passes))):
@@ -83,40 +87,54 @@ def secular_diagnostics(
     multiplicity_tol: float = 1e-5,
     balance_passes: int = 8,
 ):
-    """Return equilibrated sigma_min, nullity estimate, |det A| and singular values.
+    """Return conservative residual, nullity estimate, |det A| and diagnostics.
 
-    `multiplicity` counts independent near-null directions after diagonal
-    equilibration.  Unlike sigma_min/sigma_max of the raw matrix, this does not
-    automatically classify a reciprocal-space pole as a root merely because
-    one singular value becomes enormous.
+    The first returned value is
+
+        max(raw_sigma_min, balanced_sigma_min).
+
+    Multiplicity is estimated from the equilibrated singular spectrum, but is
+    meaningful only for candidates that also pass the raw singular-value test.
     """
     try:
         A = secular_matrix(red, omega, k, imag=imag)
         if not np.all(np.isfinite(A)):
-            return np.inf, 0, np.inf, np.array([], dtype=float)
+            return np.inf, 0, np.inf, {
+                "raw_sigma_min": np.inf,
+                "balanced_sigma_min": np.inf,
+                "raw_singular_values": np.array([], dtype=float),
+                "balanced_singular_values": np.array([], dtype=float),
+            }
+
+        raw_singular = np.linalg.svd(A, compute_uv=False)
+        raw_sigma = float(raw_singular[-1])
 
         balanced = equilibrate_matrix(A, passes=balance_passes)
-        singular = np.linalg.svd(balanced, compute_uv=False)
-        sigma_min = float(singular[-1])
-        multiplicity = int(np.count_nonzero(singular <= float(multiplicity_tol)))
+        balanced_singular = np.linalg.svd(balanced, compute_uv=False)
+        balanced_sigma = float(balanced_singular[-1])
+
+        residual = max(raw_sigma, balanced_sigma)
+        multiplicity = int(
+            np.count_nonzero(balanced_singular <= float(multiplicity_tol))
+        )
         try:
             det_abs = float(abs(np.linalg.det(A)))
         except (FloatingPointError, OverflowError):
             det_abs = np.inf
-        return sigma_min, multiplicity, det_abs, singular
-    except (FloatingPointError, ValueError, np.linalg.LinAlgError):
-        return np.inf, 0, np.inf, np.array([], dtype=float)
 
-
-def raw_sigma_min(red, omega: float, k: float, *, imag: float = 0.0):
-    """Raw (unequilibrated) sigma_min, retained for audit diagnostics only."""
-    try:
-        A = secular_matrix(red, omega, k, imag=imag)
-        if not np.all(np.isfinite(A)):
-            return np.inf
-        return float(np.linalg.svd(A, compute_uv=False)[-1])
+        return residual, multiplicity, det_abs, {
+            "raw_sigma_min": raw_sigma,
+            "balanced_sigma_min": balanced_sigma,
+            "raw_singular_values": raw_singular,
+            "balanced_singular_values": balanced_singular,
+        }
     except (FloatingPointError, ValueError, np.linalg.LinAlgError):
-        return np.inf
+        return np.inf, 0, np.inf, {
+            "raw_sigma_min": np.inf,
+            "balanced_sigma_min": np.inf,
+            "raw_singular_values": np.array([], dtype=float),
+            "balanced_singular_values": np.array([], dtype=float),
+        }
 
 
 def _det_real(red, omega: float, k: float, imag: float) -> float:
@@ -128,7 +146,7 @@ def _det_real(red, omega: float, k: float, imag: float) -> float:
         return np.nan
 
 
-def _sigma(red, omega: float, k: float, imag: float, balance_passes: int) -> float:
+def _residual(red, omega: float, k: float, imag: float, balance_passes: int) -> float:
     return secular_diagnostics(
         red, omega, k, imag=imag, balance_passes=balance_passes
     )[0]
@@ -143,8 +161,6 @@ def _deduplicate(candidates: Iterable[RootCandidate], tol_norm: float):
             continue
 
         old = out[-1]
-        # Keep the better-conditioned representative while preserving all
-        # discovery provenance and the largest detected nullity.
         best = cand if cand.sigma_min < old.sigma_min else old
         sources = "+".join(sorted(set(old.source.split("+") + cand.source.split("+"))))
         out[-1] = replace(
@@ -177,16 +193,13 @@ def find_roots_at_k(
     -----------------
     sign:
         Intervals where Re(det A) changes sign on a slightly complex scan.
-        This preserves the useful part of the historical method for simple
-        roots.
 
     svd:
-        Local minima of equilibrated sigma_min(A).  These also detect roots of
-        even multiplicity, for which det(A) can touch zero without changing
-        sign.
+        Local minima of the conservative singular residual R.  This discovers
+        roots of even multiplicity without turning reciprocal-space poles into
+        accepted roots.
 
-    Refinement and certification are performed on the *real* frequency axis.
-    A root is accepted only if equilibrated sigma_min(A) <= sigma_accept.
+    A root is accepted only if R <= sigma_accept on the real frequency axis.
     """
     if ngrid < 5:
         raise ValueError("ngrid must be >= 5")
@@ -199,22 +212,20 @@ def find_roots_at_k(
     scan_eta = float(scan_eta_norm) * scale
 
     det_re = np.array([_det_real(red, w, k, scan_eta) for w in omega], dtype=float)
-    sigma_scan = np.array(
-        [_sigma(red, w, k, scan_eta, balance_passes) for w in omega], dtype=float
+    residual_scan = np.array(
+        [_residual(red, w, k, scan_eta, balance_passes) for w in omega], dtype=float
     )
 
     brackets: list[tuple[float, float, str]] = []
 
-    # Historical detector: useful for ordinary simple roots.
     for i in range(len(omega) - 1):
         va, vb = det_re[i], det_re[i + 1]
         if np.isfinite(va) and np.isfinite(vb) and va * vb < 0.0:
             brackets.append((wn[i], wn[i + 1], "sign"))
 
-    # SVD detector: local minima are independent of the sign of det(A).
     minima = []
     for i in range(1, len(wn) - 1):
-        s0, s1, s2 = sigma_scan[i - 1], sigma_scan[i], sigma_scan[i + 1]
+        s0, s1, s2 = residual_scan[i - 1], residual_scan[i], residual_scan[i + 1]
         if np.isfinite(s1) and s1 <= s0 and s1 <= s2 and (s1 < s0 or s1 < s2):
             minima.append((s1, i))
 
@@ -230,9 +241,7 @@ def find_roots_at_k(
             continue
 
         def objective(x_norm):
-            return _sigma(
-                red, float(x_norm) * scale, k, 0.0, balance_passes
-            )
+            return _residual(red, float(x_norm) * scale, k, 0.0, balance_passes)
 
         try:
             result = minimize_scalar(
@@ -249,7 +258,7 @@ def find_roots_at_k(
 
         root_norm = float(result.x)
         root_omega = root_norm * scale
-        sigma_min, multiplicity, det_abs, _ = secular_diagnostics(
+        residual, multiplicity, det_abs, diag = secular_diagnostics(
             red,
             root_omega,
             k,
@@ -258,12 +267,14 @@ def find_roots_at_k(
             balance_passes=balance_passes,
         )
 
-        if sigma_min <= float(sigma_accept):
+        if residual <= float(sigma_accept):
             candidates.append(
                 RootCandidate(
                     omega=root_omega,
                     omega_norm=root_norm,
-                    sigma_min=sigma_min,
+                    sigma_min=residual,
+                    sigma_min_raw=float(diag["raw_sigma_min"]),
+                    sigma_min_balanced=float(diag["balanced_sigma_min"]),
                     multiplicity=max(1, multiplicity),
                     det_abs=det_abs,
                     source=source,
@@ -283,8 +294,8 @@ def certify_frequency(
     multiplicity_tol: float = 1e-5,
     balance_passes: int = 8,
 ):
-    """Certify/reject one externally supplied frequency by equilibrated SVD."""
-    sigma_min, multiplicity, det_abs, singular = secular_diagnostics(
+    """Certify/reject one externally supplied frequency by the dual SVD test."""
+    residual, multiplicity, det_abs, diag = secular_diagnostics(
         red,
         omega,
         k,
@@ -293,14 +304,16 @@ def certify_frequency(
         balance_passes=balance_passes,
     )
     return {
-        "accepted": bool(sigma_min <= sigma_accept),
+        "accepted": bool(residual <= sigma_accept),
         "omega": float(omega),
         "omega_norm": float(omega / _frequency_scale(red, C_l0)),
-        "sigma_min": float(sigma_min),
-        "sigma_min_raw": float(raw_sigma_min(red, omega, k, imag=0.0)),
+        "sigma_min": float(residual),
+        "sigma_min_raw": float(diag["raw_sigma_min"]),
+        "sigma_min_balanced": float(diag["balanced_sigma_min"]),
         "multiplicity": int(multiplicity),
         "det_abs": float(det_abs),
-        "singular_values": singular,
+        "raw_singular_values": diag["raw_singular_values"],
+        "balanced_singular_values": diag["balanced_singular_values"],
     }
 
 
@@ -315,14 +328,7 @@ def independent_fullgrid(
     expand_multiplicity: bool = True,
     **finder_kwargs,
 ):
-    """Apply find_roots_at_k independently at every k; NO band tracking.
-
-    The return value is (frequencies, metadata), where frequencies has shape
-    (nk, maxbands, 2) and stores (Re omega, Im omega=0).  If
-    expand_multiplicity=True, a nullity-two root occupies two local spectral
-    slots at exactly the same frequency, as required for two independent
-    eigenmodes.  This is not a tracking decision.
-    """
+    """Apply find_roots_at_k independently at every k; NO band tracking."""
     k_values = np.asarray(red.k, dtype=float)
     if maxbands is None:
         maxbands = int(red.nbands)

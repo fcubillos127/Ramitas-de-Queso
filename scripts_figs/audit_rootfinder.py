@@ -3,14 +3,14 @@
 The script compares, at representative k points of the square path:
 
 1. historical sign-change + fsolve logic (but using CertifiedRed, so G0 is fixed),
-2. equilibrated-SVD discovery/certification from rootfinder_certified.
+2. dual-SVD discovery/certification from rootfinder_certified.
 
 This isolates root-finder defects from lattice-sum defects.
 """
 from __future__ import annotations
 
 import numpy as np
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, linear_sum_assignment
 
 from certified_solver import CertifiedRed
 from rootfinder_certified import certify_frequency, find_roots_at_k
@@ -114,14 +114,39 @@ def historical_roots_at_k(
     return sorted(roots)
 
 
+def one_to_one_match(old_freq, new_freq, tolerance):
+    """Return accepted Hungarian matches and unmatched indices."""
+    old_freq = np.asarray(old_freq, dtype=float)
+    new_freq = np.asarray(new_freq, dtype=float)
+    if old_freq.size == 0 or new_freq.size == 0:
+        return [], list(range(old_freq.size)), list(range(new_freq.size))
+
+    cost = np.abs(old_freq[:, None] - new_freq[None, :])
+    old_idx, new_idx = linear_sum_assignment(cost)
+
+    matches = []
+    used_old = set()
+    used_new = set()
+    for i, j in zip(old_idx, new_idx):
+        if cost[i, j] < tolerance:
+            matches.append((int(i), int(j), float(cost[i, j])))
+            used_old.add(int(i))
+            used_new.add(int(j))
+
+    unmatched_old = [i for i in range(old_freq.size) if i not in used_old]
+    unmatched_new = [j for j in range(new_freq.size) if j not in used_new]
+    return matches, unmatched_old, unmatched_new
+
+
 def main():
     r = build_reference_red(n_suma=12)
     k_values = np.linspace(0.0, 3.0 * np.pi / r.a, 7)
     match_tol_norm = 2e-3
 
     total_old = matched_old = false_old = total_new = missed_new = 0
+    frequency_errors = []
 
-    print("k/pi | historical candidate -> certified sigma | SVD roots")
+    print("k/pi | historical candidate -> certified residual | SVD roots")
     print("-" * 100)
 
     for k in k_values:
@@ -144,34 +169,41 @@ def main():
 
         old_freq = np.asarray([x[0] for x in old_diag], float)
         new_freq = np.asarray([x.omega_norm for x in new], float)
+        matches, unmatched_old, unmatched_new = one_to_one_match(
+            old_freq, new_freq, match_tol_norm
+        )
 
         total_old += len(old_freq)
         total_new += len(new_freq)
-        for w in old_freq:
-            if new_freq.size and np.min(np.abs(new_freq - w)) < match_tol_norm:
-                matched_old += 1
-            else:
-                false_old += 1
-        for w in new_freq:
-            if not old_freq.size or np.min(np.abs(old_freq - w)) >= match_tol_norm:
-                missed_new += 1
+        matched_old += len(matches)
+        false_old += len(unmatched_old)
+        missed_new += len(unmatched_new)
+        frequency_errors.extend(error for _, _, error in matches)
 
         old_text = ", ".join(
-            f"{w:.6f} (sigma={s:.1e}, {'ok' if ok else 'REJECT'})"
+            f"{w:.6f} (R={s:.1e}, {'ok' if ok else 'REJECT'})"
             for w, s, ok in old_diag
         ) or "--"
         new_text = ", ".join(
             f"{x.omega_norm:.6f} [m={x.multiplicity}, {x.source}]" for x in new
         ) or "--"
-        print(f"{k/np.pi:4.1f} | {old_text}\n     | SVD: {new_text}\n")
+        print(f"{k/np.pi:4.1f} | {old_text}\n     | SVD: {new_text}")
+        if unmatched_old:
+            print("     | unmatched historical:", ", ".join(f"{old_freq[i]:.6f}" for i in unmatched_old))
+        if unmatched_new:
+            print("     | missed by historical :", ", ".join(f"{new_freq[j]:.6f}" for j in unmatched_new))
+        print()
 
     print("Summary")
     print("-------")
     print(f"historical candidates : {total_old}")
-    print(f"matched to SVD roots  : {matched_old}")
-    print(f"unmatched historical  : {false_old}")
+    print(f"one-to-one matches     : {matched_old}")
+    print(f"extra historical      : {false_old}")
     print(f"certified SVD roots    : {total_new}")
     print(f"missed by historical   : {missed_new}")
+    if frequency_errors:
+        print(f"median |Delta w_norm|  : {np.median(frequency_errors):.3e}")
+        print(f"max    |Delta w_norm|  : {np.max(frequency_errors):.3e}")
 
 
 if __name__ == "__main__":

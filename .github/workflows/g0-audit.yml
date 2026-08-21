@@ -37,3 +37,8 @@ jobs:
           --w-max 1.40
           --half-width 0.08
           --max-sweeps 3
+      - name: Run dk convergence audit around Gamma
+        run: >-
+          python scripts_figs/audit_dk_convergence_gamma.py
+          --n-suma 40
+          --ngrid 100

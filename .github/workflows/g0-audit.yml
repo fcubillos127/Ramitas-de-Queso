@@ -20,11 +20,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Probe Gamma-X local spectrum at high resolution
+      - name: Run modal-guided Gamma-X completion audit
         run: >-
-          python scripts_figs/audit_modal_gamma.py
-          --k-over-pi 1.125
+          python scripts_figs/audit_modal_completion_gamma.py
           --n-suma 40
-          --ngrid 500
-          --max-delta 0.25
-          --skip-nsum-check
+          --coarse-ngrid 140
+          --local-ngrid 120
+          --half-width 0.06

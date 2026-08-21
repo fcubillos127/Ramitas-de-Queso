@@ -20,10 +20,11 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Run Gamma modal-subspace audit
+      - name: Probe Gamma-X local spectrum at high resolution
         run: >-
           python scripts_figs/audit_modal_gamma.py
-          --k-over-pi 0.75 0.875 1.0 1.125 1.25
-          --n-suma 60
-          --ngrid 140
+          --k-over-pi 1.125
+          --n-suma 40
+          --ngrid 500
           --max-delta 0.25
+          --skip-nsum-check

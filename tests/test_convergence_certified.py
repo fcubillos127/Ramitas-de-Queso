@@ -21,25 +21,21 @@ class TestConvergenceCertified(unittest.TestCase):
     def test_matching_is_one_to_one(self):
         old = [root(0.50), root(0.70)]
         new = [root(0.50001), root(0.50002), root(0.70001)]
-
         matches, missing_old, missing_new = match_root_sets(
             old, new, max_match_delta_norm=1e-2
         )
-
         self.assertEqual(len(matches), 2)
         self.assertEqual(missing_old, ())
         self.assertEqual(len(missing_new), 1)
 
     def test_stable_spectrum_converges_after_two_refinements(self):
-        n = [8, 12, 20]
-        spectra = [
-            [root(0.80010), root(1.10012)],
-            [root(0.80003), root(1.10004)],
-            [root(0.80001), root(1.10001)],
-        ]
         result = assess_root_sequence(
-            n,
-            spectra,
+            [8, 12, 20],
+            [
+                [root(0.80010), root(1.10012)],
+                [root(0.80003), root(1.10004)],
+                [root(0.80001), root(1.10001)],
+            ],
             stable_steps=2,
             frequency_atol_norm=1e-4,
             frequency_rtol=0.0,
@@ -48,37 +44,52 @@ class TestConvergenceCertified(unittest.TestCase):
         self.assertEqual(result.recommended_n_suma, 20)
 
     def test_transient_root_blocks_convergence_until_it_disappears_stably(self):
-        n = [8, 12, 20, 30, 40]
-        spectra = [
-            [root(0.8), root(1.0), root(1.015)],
-            [root(0.80003), root(1.00003), root(1.014)],
-            [root(0.80001), root(1.00001)],
-            [root(0.800005), root(1.000005)],
-            [root(0.800003), root(1.000003)],
-        ]
         result = assess_root_sequence(
-            n,
-            spectra,
+            [8, 12, 20, 30, 40],
+            [
+                [root(0.8), root(1.0), root(1.015)],
+                [root(0.80003), root(1.00003), root(1.014)],
+                [root(0.80001), root(1.00001)],
+                [root(0.800005), root(1.000005)],
+                [root(0.800003), root(1.000003)],
+            ],
             stable_steps=2,
             frequency_atol_norm=5e-5,
             frequency_rtol=0.0,
         )
         self.assertTrue(result.converged)
         self.assertEqual(result.recommended_n_suma, 40)
-        self.assertFalse(result.steps[1].converged)  # 12 -> 20 loses transient root
+        self.assertFalse(result.steps[1].converged)
         self.assertTrue(result.steps[2].converged)
         self.assertTrue(result.steps[3].converged)
 
-    def test_multiplicity_change_prevents_convergence(self):
-        n = [8, 12, 20]
-        spectra = [
-            [root(0.9, multiplicity=1)],
-            [root(0.90001, multiplicity=2)],
-            [root(0.900005, multiplicity=2)],
-        ]
+    def test_later_instability_invalidates_early_recommendation(self):
         result = assess_root_sequence(
-            n,
-            spectra,
+            [8, 12, 20, 30],
+            [
+                [root(0.80003)],
+                [root(0.80002)],
+                [root(0.80001)],
+                [root(0.80100)],
+            ],
+            stable_steps=2,
+            frequency_atol_norm=5e-5,
+            frequency_rtol=0.0,
+        )
+        self.assertFalse(result.converged)
+        self.assertIsNone(result.recommended_n_suma)
+        self.assertTrue(result.steps[0].converged)
+        self.assertTrue(result.steps[1].converged)
+        self.assertFalse(result.steps[2].converged)
+
+    def test_multiplicity_change_prevents_convergence(self):
+        result = assess_root_sequence(
+            [8, 12, 20],
+            [
+                [root(0.9, multiplicity=1)],
+                [root(0.90001, multiplicity=2)],
+                [root(0.900005, multiplicity=2)],
+            ],
             stable_steps=2,
             frequency_atol_norm=5e-5,
             frequency_rtol=0.0,
@@ -88,15 +99,13 @@ class TestConvergenceCertified(unittest.TestCase):
         self.assertFalse(result.steps[0].multiplicity_stable)
 
     def test_bad_residual_prevents_convergence(self):
-        n = [8, 12, 20]
-        spectra = [
-            [root(0.7)],
-            [root(0.70001, residual=2e-5)],
-            [root(0.700005)],
-        ]
         result = assess_root_sequence(
-            n,
-            spectra,
+            [8, 12, 20],
+            [
+                [root(0.7)],
+                [root(0.70001, residual=2e-5)],
+                [root(0.700005)],
+            ],
             stable_steps=2,
             frequency_atol_norm=5e-5,
             frequency_rtol=0.0,
@@ -107,16 +116,14 @@ class TestConvergenceCertified(unittest.TestCase):
         self.assertFalse(result.steps[1].residuals_ok)
 
     def test_frequency_drift_prevents_false_convergence(self):
-        n = [8, 12, 20, 30]
-        spectra = [
-            [root(1.0119)],
-            [root(1.0115)],
-            [root(1.01138)],
-            [root(1.01135)],
-        ]
         result = assess_root_sequence(
-            n,
-            spectra,
+            [8, 12, 20, 30],
+            [
+                [root(1.0119)],
+                [root(1.0115)],
+                [root(1.01138)],
+                [root(1.01135)],
+            ],
             stable_steps=2,
             frequency_atol_norm=2e-5,
             frequency_rtol=0.0,

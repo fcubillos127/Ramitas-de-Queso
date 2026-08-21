@@ -1,23 +1,13 @@
 """Convergence certification of local MST roots versus reciprocal truncation.
 
-This module answers one question at a fixed Bloch point k:
+At a fixed Bloch point k this module asks whether the *set of certified roots*
+has stabilised as ``n_suma`` increases.  It deliberately does not track bands
+between different k points.
 
-    Has the *set of certified roots* stabilised as n_suma increases?
-
-It deliberately does not track physical bands between different k points.  A
-root here is a local spectral event returned by ``rootfinder_certified`` and
-carries its geometric multiplicity.
-
-Convergence requires, over several consecutive reciprocal truncations:
-
-* a one-to-one match of all roots;
-* stable root multiplicities;
-* small normalized frequency drift;
-* certified singular residuals at every compared truncation.
-
-Transient roots at low truncation are allowed, but a spectrum is not declared
-converged until they have disappeared (or stabilised) for the requested number
-of consecutive refinement steps.
+A refinement step passes only when consecutive spectra have a one-to-one root
+matching, stable multiplicities, sufficiently small frequency drift, and good
+singular residuals.  Several consecutive passing steps are required before a
+spectrum is declared converged.
 """
 from __future__ import annotations
 
@@ -78,14 +68,13 @@ def match_root_sets(
     current: Sequence[RootCandidate],
     *,
     max_match_delta_norm: float = 2e-2,
-    multiplicity_penalty_norm: float = 5e-3,
+    multiplicity_penalty_norm: float = 0.0,
 ) -> tuple[tuple[RootMatch, ...], tuple[int, ...], tuple[int, ...]]:
-    """One-to-one spectral matching between two reciprocal truncations.
+    """Return a one-to-one frequency matching between two truncations.
 
-    Frequency proximity is the primary matching variable.  A multiplicity
-    mismatch is penalised but never hidden: convergence assessment separately
-    requires multiplicity equality.  Pairs farther apart than
-    ``max_match_delta_norm`` are left unmatched.
+    Multiplicity is intentionally *not* used by default to establish identity:
+    it is a quantity to be tested for convergence, not a hint that may hide a
+    multiplicity change.  A nonzero penalty remains available for experiments.
     """
     previous = tuple(previous)
     current = tuple(current)
@@ -105,14 +94,13 @@ def match_root_sets(
                 cost[i, j] = d + float(multiplicity_penalty_norm) * dm
 
     rows, cols = linear_sum_assignment(cost)
-    accepted: list[RootMatch] = []
+    matches: list[RootMatch] = []
     used_old: set[int] = set()
     used_new: set[int] = set()
-
     for i, j in zip(rows, cols):
         if cost[i, j] >= large / 2:
             continue
-        accepted.append(
+        matches.append(
             RootMatch(
                 previous_index=int(i),
                 current_index=int(j),
@@ -124,10 +112,10 @@ def match_root_sets(
         used_old.add(int(i))
         used_new.add(int(j))
 
-    accepted.sort(key=lambda match: previous[match.previous_index].omega_norm)
+    matches.sort(key=lambda match: previous[match.previous_index].omega_norm)
     unmatched_old = tuple(i for i in range(len(previous)) if i not in used_old)
     unmatched_new = tuple(j for j in range(len(current)) if j not in used_new)
-    return tuple(accepted), unmatched_old, unmatched_new
+    return tuple(matches), unmatched_old, unmatched_new
 
 
 def compare_consecutive_spectra(
@@ -140,8 +128,10 @@ def compare_consecutive_spectra(
     frequency_rtol: float = 5e-5,
     residual_tol: float = 1e-6,
     max_match_delta_norm: float = 2e-2,
-    multiplicity_penalty_norm: float = 5e-3,
+    multiplicity_penalty_norm: float = 0.0,
 ) -> StepConvergence:
+    previous = tuple(previous)
+    current = tuple(current)
     matches, unmatched_old, unmatched_new = match_root_sets(
         previous,
         current,
@@ -166,7 +156,8 @@ def compare_consecutive_spectra(
         new = current[match.current_index]
         allowed = max(
             float(frequency_atol_norm),
-            float(frequency_rtol) * max(abs(float(old.omega_norm)), abs(float(new.omega_norm))),
+            float(frequency_rtol)
+            * max(abs(float(old.omega_norm)), abs(float(new.omega_norm))),
         )
         if match.delta_norm > allowed:
             frequency_stable = False
@@ -174,10 +165,16 @@ def compare_consecutive_spectra(
 
     residuals_ok = all(
         float(root.sigma_min) <= float(residual_tol)
-        for root in tuple(previous) + tuple(current)
+        for root in previous + current
     )
 
     max_delta = max((match.delta_norm for match in matches), default=np.inf)
+    converged = (
+        complete_bijection
+        and multiplicity_stable
+        and frequency_stable
+        and residuals_ok
+    )
     return StepConvergence(
         n_previous=int(n_previous),
         n_current=int(n_current),
@@ -191,12 +188,7 @@ def compare_consecutive_spectra(
         max_delta_norm=float(max_delta),
         multiplicity_stable=bool(multiplicity_stable),
         residuals_ok=bool(residuals_ok),
-        converged=bool(
-            complete_bijection
-            and multiplicity_stable
-            and frequency_stable
-            and residuals_ok
-        ),
+        converged=bool(converged),
     )
 
 
@@ -209,33 +201,33 @@ def assess_root_sequence(
     frequency_rtol: float = 5e-5,
     residual_tol: float = 1e-6,
     max_match_delta_norm: float = 2e-2,
-    multiplicity_penalty_norm: float = 5e-3,
+    multiplicity_penalty_norm: float = 0.0,
     k: float = np.nan,
 ) -> SpectrumConvergence:
-    """Assess convergence of already-computed root sets.
+    """Assess a precomputed sequence of local spectra.
 
-    ``stable_steps=2`` means that two *consecutive refinement transitions*
-    must pass, hence at least three reciprocal truncations are required before
-    convergence can be declared.
+    ``stable_steps=2`` requires two consecutive *refinement transitions* to
+    pass, therefore at least three truncations are needed.  If an apparently
+    converged regime later breaks, its old recommendation is discarded.
     """
-    n_values = tuple(int(n) for n in n_values)
-    roots = tuple(tuple(root_set) for root_set in root_sets)
-    if len(n_values) != len(roots):
+    values = tuple(int(n) for n in n_values)
+    spectra = tuple(tuple(root_set) for root_set in root_sets)
+    if len(values) != len(spectra):
         raise ValueError("n_values and root_sets must have the same length")
-    if len(n_values) < 2:
+    if len(values) < 2:
         raise ValueError("at least two reciprocal truncations are required")
-    if any(b <= a for a, b in zip(n_values[:-1], n_values[1:])):
+    if any(b <= a for a, b in zip(values[:-1], values[1:])):
         raise ValueError("n_values must be strictly increasing")
     stable_steps = max(1, int(stable_steps))
 
     steps: list[StepConvergence] = []
-    for i in range(1, len(n_values)):
+    for i in range(1, len(values)):
         steps.append(
             compare_consecutive_spectra(
-                n_values[i - 1],
-                roots[i - 1],
-                n_values[i],
-                roots[i],
+                values[i - 1],
+                spectra[i - 1],
+                values[i],
+                spectra[i],
                 frequency_atol_norm=frequency_atol_norm,
                 frequency_rtol=frequency_rtol,
                 residual_tol=residual_tol,
@@ -244,28 +236,33 @@ def assess_root_sequence(
             )
         )
 
-    recommended = None
+    # Recommendation belongs to the *final uninterrupted stable regime*.
+    # Earlier apparent convergence is invalidated if a later refinement fails.
     run = 0
+    recommended: int | None = None
     for step in steps:
-        run = run + 1 if step.converged else 0
-        if run >= stable_steps and recommended is None:
-            recommended = int(step.n_current)
+        if step.converged:
+            run += 1
+            if run == stable_steps:
+                recommended = int(step.n_current)
+        else:
+            run = 0
+            recommended = None
 
-    final_converged = (
-        len(steps) >= stable_steps
-        and all(step.converged for step in steps[-stable_steps:])
-    )
+    final_converged = run >= stable_steps
+    if not final_converged:
+        recommended = None
 
     return SpectrumConvergence(
         k=float(k),
-        n_values=n_values,
-        root_sets=roots,
+        n_values=values,
+        root_sets=spectra,
         steps=tuple(steps),
         stable_steps_required=stable_steps,
         converged=bool(final_converged),
         recommended_n_suma=recommended,
-        final_n_suma=int(n_values[-1]),
-        final_roots=roots[-1],
+        final_n_suma=int(values[-1]),
+        final_roots=spectra[-1],
     )
 
 
@@ -280,14 +277,10 @@ def certify_roots_vs_nsum(
     frequency_rtol: float = 5e-5,
     residual_tol: float = 1e-6,
     max_match_delta_norm: float = 2e-2,
-    multiplicity_penalty_norm: float = 5e-3,
+    multiplicity_penalty_norm: float = 0.0,
     finder_kwargs: dict | None = None,
 ) -> SpectrumConvergence:
-    """Compute and certify the local root spectrum over increasing n_suma.
-
-    ``red.n_suma`` is restored even if root discovery raises.  No band-tracking
-    state is modified.
-    """
+    """Compute the certified spectrum over increasing ``n_suma`` values."""
     values = tuple(sorted({int(n) for n in n_values}))
     if len(values) < 2 or values[0] < 1:
         raise ValueError("n_values must contain at least two positive integers")
@@ -296,18 +289,17 @@ def certify_roots_vs_nsum(
     kwargs.setdefault("sigma_accept", residual_tol)
 
     original_n = int(getattr(red, "n_suma", values[0]))
-    root_sets: list[tuple[RootCandidate, ...]] = []
+    spectra: list[tuple[RootCandidate, ...]] = []
     try:
         for n in values:
             red.n_suma = int(n)
-            found = find_roots_at_k(red, float(k), C_l0, **kwargs)
-            root_sets.append(tuple(found))
+            spectra.append(tuple(find_roots_at_k(red, float(k), C_l0, **kwargs)))
     finally:
         red.n_suma = original_n
 
     return assess_root_sequence(
         values,
-        root_sets,
+        spectra,
         stable_steps=stable_steps,
         frequency_atol_norm=frequency_atol_norm,
         frequency_rtol=frequency_rtol,
@@ -319,7 +311,7 @@ def certify_roots_vs_nsum(
 
 
 def convergence_table(result: SpectrumConvergence) -> list[dict]:
-    """Flatten a convergence result into rows convenient for CSV/DataFrame use."""
+    """Flatten root observations into rows convenient for CSV/DataFrame use."""
     rows: list[dict] = []
     for n, roots in zip(result.n_values, result.root_sets):
         for index, root in enumerate(roots):

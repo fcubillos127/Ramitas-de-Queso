@@ -1,7 +1,7 @@
 # Reciprocal-truncation convergence audit
 
 This document records the `n_suma` convergence study performed on the certified
-MST reference solver.  It is a numerical-audit baseline, not yet a production
+MST reference solver. It is a numerical-audit baseline, not yet a production
 parameter recommendation for every lattice, deformation, or frequency range.
 
 ## Frozen configuration
@@ -19,7 +19,7 @@ remaining model fixed:
 - certified fixed-k root finder with dual singular residual
 - initial discovery grid: 120 normalized-frequency samples
 
-The reciprocal truncations were
+The fixed benchmark used
 
 `n_suma = 8, 12, 20, 30, 40, 60`.
 
@@ -31,7 +31,7 @@ A refinement step was accepted only when the two consecutive local spectra had
    `max(5e-5, 5e-5*abs(omega_norm))`, and
 4. dual singular residual `R <= 1e-6` for every root in both spectra.
 
-Two consecutive accepted refinement steps were required.  An early apparent
+Two consecutive accepted refinement steps were required. An early apparent
 stable regime is invalidated if a later refinement fails.
 
 ## Seven-point benchmark
@@ -59,7 +59,7 @@ At Gamma (`k/pi = 1`), the double root converges to approximately
 
 `omega*a/(2*pi*Ct0) = 1.064583490`.
 
-The multiplicity remains two throughout the tested truncation sequence.  Thus
+The multiplicity remains two throughout the tested truncation sequence. Thus
 these degeneracies are not produced by a post-processing duplication rule.
 
 ## Slow-convergence region
@@ -99,7 +99,7 @@ justified as a generally converged setting for this spectral interval.
 
 ## Adaptive policy
 
-`adaptive_nsum.py` implements a conservative stopping policy.  With the current
+`adaptive_nsum.py` implements a conservative stopping policy. With the current
 reference defaults:
 
 - an increasing schedule such as `8, 12, 20, 30, 40, 60, 80` is evaluated;
@@ -118,11 +118,53 @@ Two values are reported deliberately:
 The frequencies returned for scientific use are those at the certification
 truncation, not the lower recommended truncation.
 
+## Dense 13-point adaptive path audit
+
+A second audit sampled the square path uniformly at
+
+`k/pi = 0.00, 0.25, ..., 3.00`
+
+using the adaptive schedule
+
+`8, 12, 20, 30, 40, 60, 80`,
+
+with two stable refinement steps plus one additional confirmation step. Every
+one of the 13 points converged before reaching 80.
+
+| `k/pi` | recommended | certified at | distinct roots | modes |
+|---:|---:|---:|---:|---:|
+| 0.00 | 20 | 30 | 2 | 3 |
+| 0.25 | 20 | 30 | 3 | 3 |
+| 0.50 | 20 | 30 | 4 | 4 |
+| 0.75 | 30 | 40 | 4 | 4 |
+| 1.00 | 20 | 30 | 3 | 4 |
+| 1.25 | 20 | 30 | 4 | 4 |
+| 1.50 | 40 | 60 | 4 | 4 |
+| 1.75 | 40 | 60 | 4 | 4 |
+| 2.00 | 40 | 60 | 4 | 4 |
+| 2.25 | 20 | 30 | 4 | 4 |
+| 2.50 | 20 | 30 | 4 | 4 |
+| 2.75 | 20 | 30 | 3 | 3 |
+| 3.00 | 20 | 30 | 2 | 3 |
+
+Thus the denser sample resolves the slow-convergence region more clearly:
+`k/pi = 1.5--2.0` consistently requires a recommended truncation of 40 and a
+confirmation at 60. An intermediate point at `k/pi = 0.75` requires 30,
+confirmed at 40. No sampled point required a recommended truncation above 40,
+and no point failed confirmation by 60.
+
+The largest final dual residual among the 13 certified spectra remained below
+approximately `4.2e-8`, comfortably inside the `1e-6` acceptance threshold.
+
 ## Current conclusion and scope
 
-For the seven representative points above, every local spectrum is converged by
-`n_suma=40` under the stated tolerance, and a subsequent `n_suma=60` calculation
-confirms the two most sensitive points.  This does **not** yet prove that 40 is
-sufficient for every k along the path, for `psi != 0`, for a triangular lattice,
-or outside the tested frequency window.  A denser adaptive k scan is the next
-validation step before reciprocal-truncation convergence is considered closed.
+For the frozen square-lattice, `psi=0`, `cut=4` baseline and the tested
+frequency window, reciprocal-truncation convergence is now considered
+numerically characterised well enough to proceed to the next layer of the
+audit. A single global `n_suma=5` is not defensible; an adaptive policy is both
+safer and cheaper. In the 13-point audit the required recommendation ranges
+from 20 to 40, with confirmation from 30 to 60.
+
+This conclusion is deliberately local to the frozen baseline. It does **not**
+yet establish convergence for `psi != 0`, triangular lattices, other angular
+cutoffs, or frequencies outside the tested interval.

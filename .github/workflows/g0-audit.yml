@@ -25,5 +25,5 @@ jobs:
           python scripts_figs/audit_modal_completion_gamma.py
           --n-suma 40
           --coarse-ngrid 140
-          --local-ngrid 120
+          --targeted-max-depth 5
           --half-width 0.06

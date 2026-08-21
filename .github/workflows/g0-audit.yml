@@ -20,3 +20,13 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run focused n_suma convergence audit
+        run: >-
+          python scripts_figs/audit_nsum_convergence.py
+          --k-over-pi 1.5
+          --n-values 8 12 20 30 40 60
+          --ngrid 120
+          --stable-steps 2
+          --freq-atol 5e-5
+          --freq-rtol 5e-5
+          --residual-tol 1e-6

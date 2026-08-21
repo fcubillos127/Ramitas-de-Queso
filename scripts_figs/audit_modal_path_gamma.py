@@ -44,11 +44,13 @@ def build_reference_red(n_suma=40):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-suma", type=int, default=40)
-    parser.add_argument("--ngrid", type=int, default=140)
+    parser.add_argument("--ngrid", type=int, default=120)
     parser.add_argument(
         "--k-over-pi", nargs="+", type=float,
         default=[0.75, 0.875, 1.0, 1.125, 1.25],
     )
+    parser.add_argument("--w-min", type=float, default=0.70)
+    parser.add_argument("--w-max", type=float, default=1.25)
     parser.add_argument("--half-width", type=float, default=0.06)
     parser.add_argument("--max-sweeps", type=int, default=3)
     args = parser.parse_args()
@@ -59,8 +61,8 @@ def main():
         r,
         k_values,
         CT0,
-        w_norm_min=1e-3,
-        w_norm_max=1.25,
+        w_norm_min=args.w_min,
+        w_norm_max=args.w_max,
         ngrid=args.ngrid,
         max_sweeps=args.max_sweeps,
         search_half_width_norm=args.half_width,
@@ -75,6 +77,7 @@ def main():
 
     print("modal path audit around Gamma")
     print("=" * 100)
+    print(f"frequency window=[{args.w_min:.3f},{args.w_max:.3f}]")
     print(
         f"completion_sweeps={graph.completion_sweeps} roots_added={graph.roots_added} "
         f"stabilised={graph.stabilised} complete_under_policy={graph.complete_under_policy}"

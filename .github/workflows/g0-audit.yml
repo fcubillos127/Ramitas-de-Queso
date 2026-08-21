@@ -27,3 +27,11 @@ jobs:
           --coarse-ngrid 140
           --targeted-max-depth 5
           --half-width 0.06
+      - name: Run bidirectional modal path audit around Gamma
+        run: >-
+          python scripts_figs/audit_modal_path_gamma.py
+          --n-suma 40
+          --ngrid 140
+          --k-over-pi 0.75 0.875 1.0 1.125 1.25
+          --half-width 0.06
+          --max-sweeps 3

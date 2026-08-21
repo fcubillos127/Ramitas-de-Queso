@@ -91,13 +91,7 @@ def _resolve_coverage_floor(
     coverage_floor: float | None,
     min_principal_cosine: float,
 ) -> float:
-    """Make completeness and transport thresholds mathematically compatible.
-
-    For one-dimensional modes, descendant coverage is |q1^H q2|^2, whereas
-    transport is gated by the principal cosine |q1^H q2|. Therefore the
-    natural default completeness floor is the square of the transport cosine
-    threshold. Explicit callers may still request a stricter coverage floor.
-    """
+    """Make completeness and transport angular thresholds compatible."""
     if coverage_floor is None:
         value = float(min_principal_cosine) ** 2
     else:
@@ -107,6 +101,22 @@ def _resolve_coverage_floor(
     return value
 
 
+def _check_frequency_gates(
+    search_half_width_norm: float,
+    transport_max_delta_omega_norm: float,
+) -> None:
+    """Prevent transport from accepting links invisible to completion.
+
+    Every frequency pair admissible to the final transport must also have been
+    visible to the completeness diagnostic. Otherwise the same pair can be
+    transported and simultaneously labelled incomplete.
+    """
+    if float(search_half_width_norm) < float(transport_max_delta_omega_norm):
+        raise ValueError(
+            "search_half_width_norm must be >= transport_max_delta_omega_norm"
+        )
+
+
 def complete_root_sets_bidirectionally(
     red,
     k_values: Sequence[float],
@@ -114,7 +124,7 @@ def complete_root_sets_bidirectionally(
     root_sets: Sequence[Sequence[RootCandidate]],
     *,
     max_sweeps: int = 3,
-    search_half_width_norm: float = 0.06,
+    search_half_width_norm: float = 0.08,
     targeted_max_depth: int = 5,
     completion_max_rounds: int = 2,
     min_pair_affinity: float = 0.15,
@@ -181,7 +191,7 @@ def assemble_modal_path_graph(
     k_values: Sequence[float],
     root_sets: Sequence[Sequence[RootCandidate]],
     *,
-    search_half_width_norm: float = 0.06,
+    search_half_width_norm: float = 0.08,
     min_pair_affinity: float = 0.15,
     coverage_floor: float | None = None,
     transport_max_delta_omega_norm: float = 0.08,
@@ -192,6 +202,7 @@ def assemble_modal_path_graph(
     stabilised: bool = True,
 ) -> ModalPathGraph:
     """Freeze completed local spectra into a layered modal-event graph."""
+    _check_frequency_gates(search_half_width_norm, transport_max_delta_omega_norm)
     coverage_floor = _resolve_coverage_floor(coverage_floor, min_principal_cosine)
     k_values = tuple(float(k) for k in k_values)
     roots = tuple(_sorted_roots(items) for items in root_sets)
@@ -280,7 +291,7 @@ def build_modal_path_graph(
     w_norm_max: float = 1.25,
     ngrid: int = 140,
     max_sweeps: int = 3,
-    search_half_width_norm: float = 0.06,
+    search_half_width_norm: float = 0.08,
     targeted_max_depth: int = 5,
     completion_max_rounds: int = 2,
     min_pair_affinity: float = 0.15,
@@ -291,6 +302,7 @@ def build_modal_path_graph(
     finder_kwargs: dict | None = None,
 ) -> ModalPathGraph:
     """Discover, bidirectionally complete, and connect a Bloch-path spectrum."""
+    _check_frequency_gates(search_half_width_norm, transport_max_delta_omega_norm)
     coverage_floor = _resolve_coverage_floor(coverage_floor, min_principal_cosine)
     k_values = tuple(float(k) for k in k_values)
     global_kwargs = dict(finder_kwargs or {})

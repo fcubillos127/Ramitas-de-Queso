@@ -86,7 +86,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-suma", type=int, default=40)
     parser.add_argument("--coarse-ngrid", type=int, default=140)
-    parser.add_argument("--local-ngrid", type=int, default=120)
+    parser.add_argument("--targeted-max-depth", type=int, default=5)
     parser.add_argument("--half-width", type=float, default=0.06)
     args = parser.parse_args()
 
@@ -115,12 +115,11 @@ def main():
         modes_prev,
         roots_curr,
         search_half_width_norm=args.half_width,
-        local_ngrid=args.local_ngrid,
+        targeted_max_depth=args.targeted_max_depth,
         max_rounds=2,
         min_pair_affinity=0.15,
         coverage_floor=0.60,
         finder_kwargs={
-            "scan_eta_norm": 1e-6,
             "sigma_accept": 1e-6,
             "multiplicity_tol": 1e-5,
         },
@@ -136,7 +135,6 @@ def main():
         )
     print(f"complete_under_policy={result.complete_under_policy}")
 
-    # This benchmark has an independently observed missed descendant near 1.06347.
     recovered = [root for root in result.roots if abs(root.omega_norm - 1.06347) < 5e-4]
     if not recovered:
         raise SystemExit("modal completion failed to recover the known Gamma-X descendant")

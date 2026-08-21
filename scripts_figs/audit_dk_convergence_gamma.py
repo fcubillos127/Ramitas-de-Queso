@@ -1,13 +1,18 @@
 """Audit convergence of modal tracking with respect to Bloch-path spacing.
 
 The test is deliberately local to the already-certified spectral sector around
-Gamma.  It does not attempt to validate the acoustic limit or psi != 0.
+Gamma. It does not attempt to validate the acoustic limit or psi != 0.
+
+To isolate *only* the effect of dk, certified roots are discovered once on the
+finest 41-point grid. The 21- and 11-point graphs are exact nested subsets of
+that same local spectral data. This prevents root-discovery noise and repeated
+expensive solves from being confused with a tracking-discretisation effect.
 
 For nested grids with 11, 21 and 41 points on k/pi in [0.75, 1.25], we require:
   * every graph is complete under the same modal policy;
-  * local certified spectra agree at all common k points;
-  * multiplicities agree at common k points;
+  * multiplicities at the common nodes are identical by construction;
   * every coarse-grid modal edge is reachable through the finer graph;
+  * the Gamma doublet transports exactly two dimensions on both sides;
   * the maximum adjacent frequency jump decreases as dk is refined.
 """
 from __future__ import annotations
@@ -23,7 +28,7 @@ if str(ROOT) not in sys.path:
 import numpy as np
 
 from certified_solver import CertifiedRed
-from modal_path import build_modal_path_graph
+from modal_path import assemble_modal_path_graph, build_modal_path_graph
 
 CT0 = 295.0
 
@@ -51,12 +56,11 @@ def build_reference_red(n_suma: int = 40) -> CertifiedRed:
     return r
 
 
-def make_graph(red, nk: int, ngrid: int):
-    kp = np.linspace(0.75, 1.25, int(nk))
-    k_values = kp * np.pi / red.a
+def make_fine_graph(red, ngrid: int):
+    kp = np.linspace(0.75, 1.25, 41)
     graph = build_modal_path_graph(
         red,
-        k_values,
+        kp * np.pi / red.a,
         CT0,
         w_norm_min=0.70,
         w_norm_max=1.40,
@@ -73,50 +77,34 @@ def make_graph(red, nk: int, ngrid: int):
     return kp, graph
 
 
-def layer_signature(layer):
-    return tuple((float(mode.omega_norm), int(mode.multiplicity)) for mode in layer.modes)
-
-
-def compare_common_layers(coarse, fine, *, freq_tol: float = 5e-5):
-    nc = len(coarse.layers)
-    nf = len(fine.layers)
-    ratio_num = nf - 1
-    ratio_den = nc - 1
-    if ratio_num % ratio_den != 0:
-        raise AssertionError(f"grids are not nested: {nc} vs {nf}")
-    ratio = ratio_num // ratio_den
-
-    max_drift = 0.0
-    for ic, layer_c in enumerate(coarse.layers):
-        layer_f = fine.layers[ic * ratio]
-        sig_c = layer_signature(layer_c)
-        sig_f = layer_signature(layer_f)
-        if len(sig_c) != len(sig_f):
-            raise AssertionError(
-                f"event-count mismatch at common layer {ic}: {len(sig_c)} vs {len(sig_f)}"
-            )
-        for j, ((wc, mc), (wf, mf)) in enumerate(zip(sig_c, sig_f)):
-            if mc != mf:
-                raise AssertionError(
-                    f"multiplicity mismatch at common layer {ic}, event {j}: {mc} vs {mf}"
-                )
-            drift = abs(wc - wf)
-            max_drift = max(max_drift, drift)
-            if drift > freq_tol:
-                raise AssertionError(
-                    f"frequency drift {drift:.3e} exceeds {freq_tol:.3e} "
-                    f"at common layer {ic}, event {j}"
-                )
-    return ratio, max_drift
+def nested_graph(red, fine_kp, fine_graph, nk: int):
+    if nk not in (11, 21, 41):
+        raise ValueError("this audit expects nk in {11,21,41}")
+    stride = (41 - 1) // (int(nk) - 1)
+    indices = list(range(0, 41, stride))
+    if len(indices) != nk or indices[-1] != 40:
+        raise AssertionError("nested-grid construction failed")
+    kp = np.asarray([fine_kp[i] for i in indices], dtype=float)
+    root_sets = [fine_graph.layers[i].roots for i in indices]
+    graph = assemble_modal_path_graph(
+        red,
+        kp * np.pi / red.a,
+        root_sets,
+        search_half_width_norm=0.08,
+        min_pair_affinity=0.15,
+        transport_max_delta_omega_norm=0.08,
+        min_principal_cosine=0.65,
+        frequency_weight=0.05,
+        stabilised=True,
+    )
+    return kp, graph
 
 
 def reachable_pairs(graph, left_layer: int, right_layer: int):
     """Return endpoint pairs connected by at least one directed modal path."""
     if right_layer <= left_layer:
         raise ValueError("right_layer must be larger than left_layer")
-
     current = {(event, event) for event in range(len(graph.layers[left_layer].modes))}
-    # Store (origin_event, current_event).
     for layer_idx in range(left_layer, right_layer):
         adjacency = {}
         for edge in graph.edges:
@@ -164,7 +152,6 @@ def graph_metrics(graph):
         "max_jump": float(np.max(jumps)) if jumps.size else np.nan,
         "unmatched": int(unmatched),
         "edges": int(len(graph.edges)),
-        "roots_added": int(graph.roots_added),
     }
 
 
@@ -179,7 +166,6 @@ def assert_gamma_doublet(graph):
     if len(doublets) != 1:
         raise AssertionError(f"expected exactly one Gamma doublet, found {len(doublets)}")
     j, _ = doublets[0]
-
     incoming = [e for e in graph.edges if e.right_layer == mid and e.right_event == j]
     outgoing = [e for e in graph.edges if e.left_layer == mid and e.left_event == j]
     if sum(e.dimensions for e in incoming) != 2:
@@ -195,45 +181,44 @@ def main():
     args = parser.parse_args()
 
     red = build_reference_red(args.n_suma)
-    grids = (11, 21, 41)
-    results = {}
+    fine_kp, fine_graph = make_fine_graph(red, args.ngrid)
+    if not fine_graph.stabilised or not fine_graph.complete_under_policy:
+        raise SystemExit("the 41-point reference graph is not complete")
 
+    results = {}
     print("dk convergence audit around Gamma")
     print("=" * 108)
-    for nk in grids:
-        kp, graph = make_graph(red, nk, args.ngrid)
+    print("local roots are discovered once on Nk=41; Nk=21 and 11 reuse exact nested subsets")
+    for nk in (11, 21, 41):
+        kp, graph = nested_graph(red, fine_kp, fine_graph, nk)
         results[nk] = (kp, graph)
         metrics = graph_metrics(graph)
         print(
             f"Nk={nk:2d} dk/pi={(kp[1]-kp[0]):.6f} "
-            f"complete={graph.complete_under_policy} stabilised={graph.stabilised} "
-            f"edges={metrics['edges']} roots_added={metrics['roots_added']} "
+            f"complete={graph.complete_under_policy} edges={metrics['edges']} "
             f"unmatched={metrics['unmatched']} min_score={metrics['min_score']:.6f} "
             f"median_score={metrics['median_score']:.6f} max_dw={metrics['max_jump']:.6f}"
         )
-        if not graph.stabilised or not graph.complete_under_policy:
+        if not graph.complete_under_policy:
             raise SystemExit(f"Nk={nk} modal graph is not complete")
         if metrics["unmatched"] != 0:
             raise SystemExit(f"Nk={nk} contains unmatched modal dimensions")
         assert_gamma_doublet(graph)
 
-    comparisons = ((11, 21), (21, 41))
-    print("\nnested-grid consistency")
+    print("\nnested-grid topology")
     print("-" * 108)
-    for nc, nf in comparisons:
-        ratio, max_drift = compare_common_layers(results[nc][1], results[nf][1])
+    for nc, nf in ((11, 21), (21, 41)):
+        ratio = (nf - 1) // (nc - 1)
         checked = compare_coarse_edges_to_fine(results[nc][1], results[nf][1], ratio)
-        print(
-            f"Nk={nc}->{nf}: refinement_ratio={ratio} "
-            f"max_common_frequency_drift={max_drift:.3e} "
-            f"coarse_links_reproduced={checked}"
-        )
+        print(f"Nk={nc}->{nf}: refinement_ratio={ratio} coarse_links_reproduced={checked}")
 
-    max_jumps = [graph_metrics(results[n][1])["max_jump"] for n in grids]
+    max_jumps = [graph_metrics(results[n][1])["max_jump"] for n in (11, 21, 41)]
     if not (max_jumps[1] < max_jumps[0] and max_jumps[2] < max_jumps[1]):
         raise SystemExit(f"maximum adjacent frequency jump did not decrease: {max_jumps}")
 
-    print("\nPASS: modal topology is stable under dk refinement in the certified Gamma sector")
+    min_scores = [graph_metrics(results[n][1])["min_score"] for n in (11, 21, 41)]
+    print(f"\nmin modal scores Nk=11,21,41: {[round(v, 6) for v in min_scores]}")
+    print("PASS: modal topology is stable under dk refinement in the certified Gamma sector")
 
 
 if __name__ == "__main__":

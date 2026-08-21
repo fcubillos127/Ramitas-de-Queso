@@ -20,8 +20,8 @@ Therefore the accepted residual is deliberately conservative:
 
     R = max(sigma_min(A), sigma_min(D_r A D_c)).
 
-An authentic rank loss makes both quantities vanish.  Pure scaling artifacts
-and reciprocal-space poles make only one of them small.  Diagonal scaling is
+An authentic rank loss makes both quantities vanish. Pure scaling artifacts
+and reciprocal-space poles make only one of them small. Diagonal scaling is
 invertible away from exactly zero rows/columns and does not alter exact rank.
 """
 from __future__ import annotations
@@ -152,6 +152,26 @@ def _residual(red, omega: float, k: float, imag: float, balance_passes: int) -> 
     )[0]
 
 
+def _finite_minimizer_residual(
+    red,
+    omega: float,
+    k: float,
+    imag: float,
+    balance_passes: int,
+) -> float:
+    """Finite objective value for Brent/bounded minimisation.
+
+    Exact reciprocal-space poles are represented by ``+inf`` in the physical
+    diagnostic.  Passing infinities directly into SciPy's parabolic step can
+    trigger invalid ``inf-inf`` arithmetic.  For optimisation only, map every
+    non-finite residual to a very large finite penalty.  Final certification
+    still calls ``secular_diagnostics`` and therefore retains the exact pole
+    rejection semantics.
+    """
+    value = _residual(red, omega, k, imag, balance_passes)
+    return float(value) if np.isfinite(value) else 1.0e100
+
+
 def _deduplicate(candidates: Iterable[RootCandidate], tol_norm: float):
     ordered = sorted(candidates, key=lambda c: c.omega_norm)
     out: list[RootCandidate] = []
@@ -195,7 +215,7 @@ def find_roots_at_k(
         Intervals where Re(det A) changes sign on a slightly complex scan.
 
     svd:
-        Local minima of the conservative singular residual R.  This discovers
+        Local minima of the conservative singular residual R. This discovers
         roots of even multiplicity without turning reciprocal-space poles into
         accepted roots.
 
@@ -241,7 +261,9 @@ def find_roots_at_k(
             continue
 
         def objective(x_norm):
-            return _residual(red, float(x_norm) * scale, k, 0.0, balance_passes)
+            return _finite_minimizer_residual(
+                red, float(x_norm) * scale, k, 0.0, balance_passes
+            )
 
         try:
             result = minimize_scalar(

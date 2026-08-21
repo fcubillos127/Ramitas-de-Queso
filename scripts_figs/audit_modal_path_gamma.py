@@ -50,7 +50,7 @@ def main():
         default=[0.75, 0.875, 1.0, 1.125, 1.25],
     )
     parser.add_argument("--w-min", type=float, default=0.70)
-    parser.add_argument("--w-max", type=float, default=1.25)
+    parser.add_argument("--w-max", type=float, default=1.40)
     parser.add_argument("--half-width", type=float, default=0.06)
     parser.add_argument("--max-sweeps", type=int, default=3)
     args = parser.parse_args()
@@ -69,7 +69,8 @@ def main():
         targeted_max_depth=5,
         completion_max_rounds=2,
         min_pair_affinity=0.15,
-        coverage_floor=0.60,
+        # coverage_floor is derived from min_principal_cosine**2 so the
+        # completeness and transport gates are mathematically consistent.
         transport_max_delta_omega_norm=0.08,
         min_principal_cosine=0.65,
         frequency_weight=0.05,

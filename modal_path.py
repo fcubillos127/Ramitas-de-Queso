@@ -1,28 +1,18 @@
 """Bidirectionally completed modal event graph along a Bloch path.
 
-The local certified solver returns spectral *events* at each k.  An event may
+The local certified solver returns spectral *events* at each k. An event may
 have geometric multiplicity larger than one, so it must not be expanded into
 arbitrary frequency-sorted columns at a degeneracy.
 
-This module builds a layered graph instead:
-
-* each layer is one Bloch point;
-* each node is one certified spectral event with its modal null subspace;
-* each edge carries the number of modal dimensions transported between two
-  adjacent events;
-* local spectra are completed in both path directions before edges are frozen.
-
-The bidirectional completion is important.  A purely forward continuation can
-recover a missed descendant but cannot diagnose that the source layer itself
-was incomplete.  Alternating forward/backward sweeps lets either neighbour
-request a targeted certified search until the root sets stabilise.
+Each layer is one Bloch point, each node is one certified spectral event with
+its modal null subspace, and each edge carries the number of modal dimensions
+transported between adjacent events. Local spectra are completed in both path
+directions before edges are frozen.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Sequence
-
-import numpy as np
 
 from modal_completion import (
     DescendantCoverage,
@@ -82,6 +72,28 @@ def _count_new_roots(before: Sequence[RootCandidate], after: Sequence[RootCandid
     return max(0, len(after) - len(before))
 
 
+def _targeted_finder_kwargs(finder_kwargs: dict | None) -> dict:
+    """Keep only arguments shared with the targeted recursive root finder.
+
+    The global scanner also accepts discovery-only controls such as
+    ``scan_eta_norm``. Passing those through modal completion would turn a
+    legitimate refinement request into an API error, so the two parameter
+    surfaces are separated explicitly here.
+    """
+    allowed = {
+        "sigma_accept",
+        "multiplicity_tol",
+        "balance_passes",
+        "refine_xatol_norm",
+        "dedup_tol_norm",
+    }
+    return {
+        key: value
+        for key, value in dict(finder_kwargs or {}).items()
+        if key in allowed
+    }
+
+
 def complete_root_sets_bidirectionally(
     red,
     k_values: Sequence[float],
@@ -110,7 +122,6 @@ def complete_root_sets_bidirectionally(
     total_added = 0
     sweeps_done = 0
     stabilised = False
-
     completion_kwargs = dict(
         search_half_width_norm=float(search_half_width_norm),
         targeted_max_depth=int(targeted_max_depth),
@@ -120,39 +131,26 @@ def complete_root_sets_bidirectionally(
         w_norm_min_global=float(w_norm_min_global),
         w_norm_max_global=float(w_norm_max_global),
         dedup_tol_norm=float(dedup_tol_norm),
-        finder_kwargs=dict(finder_kwargs or {}),
+        finder_kwargs=_targeted_finder_kwargs(finder_kwargs),
     )
 
     for sweep in range(max(1, int(max_sweeps))):
         added_this_sweep = 0
 
-        # Forward: layer i requests descendants in i+1.
         for i in range(len(k_values) - 1):
             source_modes = build_modal_spectrum(red, k_values[i], roots[i])
             before = roots[i + 1]
             result = complete_spectrum_from_previous(
-                red,
-                k_values[i + 1],
-                C_l0,
-                source_modes,
-                before,
-                **completion_kwargs,
+                red, k_values[i + 1], C_l0, source_modes, before, **completion_kwargs
             )
             roots[i + 1] = _sorted_roots(result.roots)
             added_this_sweep += _count_new_roots(before, roots[i + 1])
 
-        # Backward: layer i requests ancestors in i-1 using exactly the same
-        # subspace-coverage logic, only with reversed path orientation.
         for i in range(len(k_values) - 1, 0, -1):
             source_modes = build_modal_spectrum(red, k_values[i], roots[i])
             before = roots[i - 1]
             result = complete_spectrum_from_previous(
-                red,
-                k_values[i - 1],
-                C_l0,
-                source_modes,
-                before,
-                **completion_kwargs,
+                red, k_values[i - 1], C_l0, source_modes, before, **completion_kwargs
             )
             roots[i - 1] = _sorted_roots(result.roots)
             added_this_sweep += _count_new_roots(before, roots[i - 1])
@@ -281,10 +279,10 @@ def build_modal_path_graph(
 ) -> ModalPathGraph:
     """Discover, bidirectionally complete, and connect a Bloch-path spectrum."""
     k_values = tuple(float(k) for k in k_values)
-    kwargs = dict(finder_kwargs or {})
-    kwargs.setdefault("scan_eta_norm", 1e-6)
-    kwargs.setdefault("sigma_accept", 1e-6)
-    kwargs.setdefault("multiplicity_tol", 1e-5)
+    global_kwargs = dict(finder_kwargs or {})
+    global_kwargs.setdefault("scan_eta_norm", 1e-6)
+    global_kwargs.setdefault("sigma_accept", 1e-6)
+    global_kwargs.setdefault("multiplicity_tol", 1e-5)
 
     initial = []
     for k in k_values:
@@ -297,7 +295,7 @@ def build_modal_path_graph(
                     w_norm_min=float(w_norm_min),
                     w_norm_max=float(w_norm_max),
                     ngrid=int(ngrid),
-                    **kwargs,
+                    **global_kwargs,
                 )
             )
         )
@@ -315,7 +313,7 @@ def build_modal_path_graph(
         coverage_floor=coverage_floor,
         w_norm_min_global=w_norm_min,
         w_norm_max_global=w_norm_max,
-        finder_kwargs=kwargs,
+        finder_kwargs=global_kwargs,
     )
 
     return assemble_modal_path_graph(

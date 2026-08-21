@@ -51,7 +51,7 @@ def main():
     )
     parser.add_argument("--w-min", type=float, default=0.70)
     parser.add_argument("--w-max", type=float, default=1.40)
-    parser.add_argument("--half-width", type=float, default=0.06)
+    parser.add_argument("--half-width", type=float, default=0.08)
     parser.add_argument("--max-sweeps", type=int, default=3)
     args = parser.parse_args()
 

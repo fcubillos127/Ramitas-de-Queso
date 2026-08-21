@@ -1,17 +1,17 @@
 """Use modal continuity to detect and repair incomplete fixed-k spectra.
 
-A certified root can still be *missed* by a coarse global frequency scan.  This
+A certified root can still be *missed* by a coarse global frequency scan. This
 is particularly likely when an m-fold degeneracy at k_i splits into several
-nearby simple roots at k_{i+1}.  The local roots that are found remain valid;
+nearby simple roots at k_{i+1}. The local roots that are found remain valid;
 the problem is completeness, not certification.
 
 This module treats the modal subspace at k_i as a dimension-counting diagnostic.
-If the neighbouring roots within a local frequency window do not span enough of
-that subspace, a denser *local* root search is triggered.  Every newly found
+If the neighbouring roots within a continuation window do not span enough of
+that subspace, a targeted recursive SVD search is triggered. Every newly found
 candidate is still subjected to the same dual-SVD certificate used by
 ``rootfinder_certified``.
 
-The algorithm is deliberately a reference completion layer.  It does not yet
+The algorithm is deliberately a reference completion layer. It does not yet
 assign global band labels.
 """
 from __future__ import annotations
@@ -22,7 +22,8 @@ from typing import Sequence
 import numpy as np
 
 from modal_tracking import ModalSubspace, build_modal_spectrum, subspace_metrics
-from rootfinder_certified import RootCandidate, find_roots_at_k
+from rootfinder_certified import RootCandidate
+from targeted_rootfinder import find_roots_targeted
 
 
 @dataclass(frozen=True)
@@ -88,7 +89,7 @@ def diagnose_descendant_coverage(
     """Check whether each previous modal event is represented at the next k.
 
     Candidate events are first gated by frequency and a deliberately weak modal
-    affinity.  Their *union subspace* is then compared with the source event,
+    affinity. Their *union subspace* is then compared with the source event,
     which avoids double counting nearly collinear candidate roots.
 
     Refinement is requested if either
@@ -162,7 +163,8 @@ def merge_root_candidates(
         if not merged or abs(root.omega_norm - merged[-1].omega_norm) > float(tol_norm):
             merged.append(root)
             continue
-        # Same numerical root found by two scans: keep the better certificate.
+        # Same numerical root found by two discovery routes: keep the stronger
+        # certificate while preserving the fact that this is one spectral event.
         if root.sigma_min < merged[-1].sigma_min:
             merged[-1] = root
     return tuple(merged)
@@ -176,7 +178,7 @@ def complete_spectrum_from_previous(
     current_roots: Sequence[RootCandidate],
     *,
     search_half_width_norm: float = 0.06,
-    local_ngrid: int = 120,
+    targeted_max_depth: int = 5,
     max_rounds: int = 2,
     min_pair_affinity: float = 0.15,
     coverage_floor: float = 0.60,
@@ -188,17 +190,18 @@ def complete_spectrum_from_previous(
     """Repair an incomplete current spectrum using targeted certified searches.
 
     A flagged source event opens a narrow frequency window centred on its
-    previous certified frequency.  This is much cheaper than globally raising
-    the scan density and remains effective arbitrarily close to a degeneracy,
-    provided the descendants stay inside the chosen continuation window.
+    previous certified frequency. The window is searched recursively with the
+    dual-SVD residual rather than sampled by another uniform grid. This makes
+    the completion step sensitive to narrow split roots without paying the cost
+    of a globally dense frequency mesh.
     """
     roots = tuple(sorted(current_roots, key=lambda root: root.omega_norm))
     rounds: list[CompletionRound] = []
     kwargs = dict(finder_kwargs or {})
-    kwargs.setdefault("scan_eta_norm", 1e-6)
     kwargs.setdefault("sigma_accept", 1e-6)
     kwargs.setdefault("multiplicity_tol", 1e-5)
     kwargs.setdefault("dedup_tol_norm", dedup_tol_norm)
+    kwargs.setdefault("max_depth", int(targeted_max_depth))
 
     diagnostics: tuple[DescendantCoverage, ...] = ()
     modes: tuple[ModalSubspace, ...] = ()
@@ -225,13 +228,12 @@ def complete_spectrum_from_previous(
             if hi <= lo:
                 continue
             windows.append((float(lo), float(hi)))
-            found = find_roots_at_k(
+            found = find_roots_targeted(
                 red,
                 float(k_current),
                 C_l0,
                 w_norm_min=lo,
                 w_norm_max=hi,
-                ngrid=int(local_ngrid),
                 **kwargs,
             )
             additions.extend(found)
@@ -248,11 +250,10 @@ def complete_spectrum_from_previous(
         )
 
         if len(roots) == before:
-            # Repeating exactly the same local searches cannot add information.
+            # Repeating the same targeted windows cannot add information unless
+            # the continuation window or recursive depth is deliberately changed.
             break
 
-    # Ensure returned diagnostics describe the returned spectrum even after an
-    # early break caused by a no-op search.
     modes = build_modal_spectrum(red, float(k_current), roots)
     diagnostics = diagnose_descendant_coverage(
         previous_modes,

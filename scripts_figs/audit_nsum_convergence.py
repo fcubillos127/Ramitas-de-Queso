@@ -1,6 +1,6 @@
 """Audit convergence of certified MST roots versus n_suma.
 
-This script is intentionally separate from production plotting.  It computes
+This script is intentionally separate from production plotting. It computes
 independent local spectra at representative Bloch points and asks when the
 *entire root set* becomes stable under reciprocal-space refinement.
 """
@@ -8,7 +8,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 from pathlib import Path
+
+# Running ``python scripts_figs/audit_nsum_convergence.py`` puts scripts_figs/
+# rather than the repository root on sys.path.  Add the root explicitly so the
+# audit modules can be imported in CI and from a normal checkout.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np
 

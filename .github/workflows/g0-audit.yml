@@ -34,6 +34,6 @@ jobs:
           --ngrid 120
           --k-over-pi 0.75 0.875 1.0 1.125 1.25
           --w-min 0.70
-          --w-max 1.25
+          --w-max 1.40
           --half-width 0.06
           --max-sweeps 3

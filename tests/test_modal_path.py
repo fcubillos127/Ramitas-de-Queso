@@ -46,9 +46,6 @@ class FakeRed:
 
 class TestModalPathTopology(unittest.TestCase):
     def setUp(self):
-        # assemble_modal_path_graph normally builds modes from the real secular
-        # matrix. These tests exercise only graph semantics by monkeypatching the
-        # imported builder locally.
         import modal_path
         self.modal_path = modal_path
         self.original_builder = modal_path.build_modal_spectrum
@@ -57,19 +54,22 @@ class TestModalPathTopology(unittest.TestCase):
         self.modal_path.build_modal_spectrum = self.original_builder
 
     def _assemble_from_modes(self, modes_by_layer):
-        mapping = {}
         roots = []
         ks = []
+        mode_by_root_id = {}
         for i, modes in enumerate(modes_by_layer):
             k = float(i)
             ks.append(k)
             local_roots = tuple(mode.root for mode in modes)
             roots.append(local_roots)
-            mapping[(k, tuple(id(root) for root in local_roots))] = tuple(modes)
+            for mode in modes:
+                mode_by_root_id[id(mode.root)] = mode
 
-        def builder(_red, k, local_roots):
-            key = (float(k), tuple(id(root) for root in local_roots))
-            return mapping[key]
+        def builder(_red, _k, local_roots):
+            # assemble_modal_path_graph sorts local roots by frequency. Recover
+            # the corresponding synthetic mode by root identity so the fixture
+            # does not assume any input ordering.
+            return tuple(mode_by_root_id[id(root)] for root in local_roots)
 
         self.modal_path.build_modal_spectrum = builder
         return assemble_modal_path_graph(

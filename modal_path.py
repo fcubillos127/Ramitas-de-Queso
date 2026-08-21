@@ -73,13 +73,6 @@ def _count_new_roots(before: Sequence[RootCandidate], after: Sequence[RootCandid
 
 
 def _targeted_finder_kwargs(finder_kwargs: dict | None) -> dict:
-    """Keep only arguments shared with the targeted recursive root finder.
-
-    The global scanner also accepts discovery-only controls such as
-    ``scan_eta_norm``. Passing those through modal completion would turn a
-    legitimate refinement request into an API error, so the two parameter
-    surfaces are separated explicitly here.
-    """
     allowed = {
         "sigma_accept",
         "multiplicity_tol",
@@ -94,6 +87,26 @@ def _targeted_finder_kwargs(finder_kwargs: dict | None) -> dict:
     }
 
 
+def _resolve_coverage_floor(
+    coverage_floor: float | None,
+    min_principal_cosine: float,
+) -> float:
+    """Make completeness and transport thresholds mathematically compatible.
+
+    For one-dimensional modes, descendant coverage is |q1^H q2|^2, whereas
+    transport is gated by the principal cosine |q1^H q2|. Therefore the
+    natural default completeness floor is the square of the transport cosine
+    threshold. Explicit callers may still request a stricter coverage floor.
+    """
+    if coverage_floor is None:
+        value = float(min_principal_cosine) ** 2
+    else:
+        value = float(coverage_floor)
+    if not 0.0 <= value <= 1.0:
+        raise ValueError("coverage_floor must lie in [0,1]")
+    return value
+
+
 def complete_root_sets_bidirectionally(
     red,
     k_values: Sequence[float],
@@ -105,7 +118,7 @@ def complete_root_sets_bidirectionally(
     targeted_max_depth: int = 5,
     completion_max_rounds: int = 2,
     min_pair_affinity: float = 0.15,
-    coverage_floor: float = 0.60,
+    coverage_floor: float = 0.4225,
     w_norm_min_global: float = 1e-3,
     w_norm_max_global: float = 1.25,
     dedup_tol_norm: float = 5e-6,
@@ -136,7 +149,6 @@ def complete_root_sets_bidirectionally(
 
     for sweep in range(max(1, int(max_sweeps))):
         added_this_sweep = 0
-
         for i in range(len(k_values) - 1):
             source_modes = build_modal_spectrum(red, k_values[i], roots[i])
             before = roots[i + 1]
@@ -171,7 +183,7 @@ def assemble_modal_path_graph(
     *,
     search_half_width_norm: float = 0.06,
     min_pair_affinity: float = 0.15,
-    coverage_floor: float = 0.60,
+    coverage_floor: float | None = None,
     transport_max_delta_omega_norm: float = 0.08,
     min_principal_cosine: float = 0.65,
     frequency_weight: float = 0.05,
@@ -180,6 +192,7 @@ def assemble_modal_path_graph(
     stabilised: bool = True,
 ) -> ModalPathGraph:
     """Freeze completed local spectra into a layered modal-event graph."""
+    coverage_floor = _resolve_coverage_floor(coverage_floor, min_principal_cosine)
     k_values = tuple(float(k) for k in k_values)
     roots = tuple(_sorted_roots(items) for items in root_sets)
     if len(k_values) != len(roots):
@@ -271,13 +284,14 @@ def build_modal_path_graph(
     targeted_max_depth: int = 5,
     completion_max_rounds: int = 2,
     min_pair_affinity: float = 0.15,
-    coverage_floor: float = 0.60,
+    coverage_floor: float | None = None,
     transport_max_delta_omega_norm: float = 0.08,
     min_principal_cosine: float = 0.65,
     frequency_weight: float = 0.05,
     finder_kwargs: dict | None = None,
 ) -> ModalPathGraph:
     """Discover, bidirectionally complete, and connect a Bloch-path spectrum."""
+    coverage_floor = _resolve_coverage_floor(coverage_floor, min_principal_cosine)
     k_values = tuple(float(k) for k in k_values)
     global_kwargs = dict(finder_kwargs or {})
     global_kwargs.setdefault("scan_eta_norm", 1e-6)

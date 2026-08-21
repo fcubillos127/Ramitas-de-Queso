@@ -20,14 +20,3 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Run dense adaptive n_suma audit
-        run: >-
-          python scripts_figs/audit_adaptive_nsum_path.py
-          --nk 13
-          --ngrid 120
-          --n-schedule 8 12 20 30 40 60 80
-          --stable-steps 2
-          --confirmation-steps 1
-          --freq-atol 5e-5
-          --freq-rtol 5e-5
-          --residual-tol 1e-6

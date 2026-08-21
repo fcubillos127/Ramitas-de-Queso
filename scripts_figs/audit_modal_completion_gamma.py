@@ -1,4 +1,4 @@
-"""Demonstrate modal-coverage guided recovery of a missed Gamma-X root."""
+"""Demonstrate modal completion and transport through the Gamma doublet."""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +14,7 @@ import numpy as np
 from certified_solver import CertifiedRed
 from modal_completion import complete_spectrum_from_previous, diagnose_descendant_coverage
 from modal_tracking import build_modal_spectrum
+from modal_transport import assign_modal_transport
 from rootfinder_certified import find_roots_at_k
 
 
@@ -82,6 +83,21 @@ def print_diagnostics(title, diagnostics):
         )
 
 
+def print_transport(transport):
+    print("\nmodal transport Gamma -> Gamma-X")
+    print("--------------------------------")
+    for edge in transport.edges:
+        cosines = ",".join(f"{value:.5f}" for value in edge.principal_cosines)
+        print(
+            f"{edge.source_index}->{edge.target_index}: dimensions={edge.dimensions} "
+            f"domega={edge.delta_omega_norm:.6f} modal_score={edge.modal_score:.5f} "
+            f"cos=[{cosines}]"
+        )
+    print(f"source_used={transport.source_used}")
+    print(f"source_unmatched={transport.source_unmatched}")
+    print(f"target_unmatched={transport.target_unmatched}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-suma", type=int, default=40)
@@ -140,6 +156,25 @@ def main():
         raise SystemExit("modal completion failed to recover the known Gamma-X descendant")
     if not result.complete_under_policy:
         raise SystemExit("modal completion did not restore descendant coverage")
+
+    transport = assign_modal_transport(
+        modes_prev,
+        result.modes,
+        max_delta_omega_norm=0.08,
+        min_principal_cosine=0.65,
+        frequency_weight=0.05,
+    )
+    print_transport(transport)
+
+    # Gamma contains 1 + 2 + 1 = four modal dimensions in the tested frequency
+    # window.  After completion all four must continue to Gamma-X.  In
+    # particular source index 1 is the doublet and must transport two dimensions.
+    if transport.matched_dimensions != 4:
+        raise SystemExit(
+            f"expected four transported Gamma dimensions, got {transport.matched_dimensions}"
+        )
+    if transport.source_used != (1, 2, 1):
+        raise SystemExit(f"unexpected Gamma transport capacities: {transport.source_used}")
 
 
 if __name__ == "__main__":

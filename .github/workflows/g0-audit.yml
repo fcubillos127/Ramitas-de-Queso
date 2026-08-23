@@ -21,11 +21,23 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Run first global baseline M-Gamma-X-M
+      - name: Resolve M doublet with half-step k grid
         run: >-
-          python scripts_figs/audit_global_baseline_v1.py
+          python scripts_figs/audit_modal_path_gamma.py
           --n-suma 40
           --ngrid 110
-          --points-per-segment 9
+          --k-over-pi 0.0 0.0625 0.125
           --w-min 0.70
           --w-max 1.40
+          --half-width 0.08
+          --max-sweeps 3
+      - name: Resolve X neighbourhood with half-step k grid
+        run: >-
+          python scripts_figs/audit_modal_path_gamma.py
+          --n-suma 40
+          --ngrid 110
+          --k-over-pi 1.875 1.9375 2.0 2.0625 2.125
+          --w-min 0.70
+          --w-max 1.40
+          --half-width 0.08
+          --max-sweeps 3

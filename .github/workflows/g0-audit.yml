@@ -21,27 +21,11 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Run modal-guided Gamma-X completion audit
+      - name: Run first global baseline M-Gamma-X-M
         run: >-
-          python scripts_figs/audit_modal_completion_gamma.py
+          python scripts_figs/audit_global_baseline_v1.py
           --n-suma 40
-          --coarse-ngrid 140
-          --targeted-max-depth 5
-          --half-width 0.06
-      - name: Run bidirectional modal path audit around Gamma
-        run: >-
-          python scripts_figs/audit_modal_path_gamma.py
-          --n-suma 40
-          --ngrid 120
-          --k-over-pi 0.75 0.875 1.0 1.125 1.25
+          --ngrid 110
+          --points-per-segment 9
           --w-min 0.70
           --w-max 1.40
-          --half-width 0.08
-          --max-sweeps 3
-      - name: Diagnose dk reference graph
-        run: python scripts_figs/diagnose_dk_reference.py
-      - name: Run dk convergence audit around Gamma
-        run: >-
-          python scripts_figs/audit_dk_convergence_gamma.py
-          --n-suma 40
-          --ngrid 100

@@ -38,6 +38,8 @@ jobs:
           --w-max 1.40
           --half-width 0.08
           --max-sweeps 3
+      - name: Diagnose dk reference graph
+        run: python scripts_figs/diagnose_dk_reference.py
       - name: Run dk convergence audit around Gamma
         run: >-
           python scripts_figs/audit_dk_convergence_gamma.py

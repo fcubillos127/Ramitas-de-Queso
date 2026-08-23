@@ -8,6 +8,11 @@ are finished.
 The scalar path parameter used by suma_de_red.K is
     0 -> M, 1*pi/a -> Gamma, 2*pi/a -> X, 3*pi/a -> M.
 This script therefore audits M-Gamma-X-M explicitly and verifies closure at M.
+
+Important audit behaviour: the complete layer spectrum and every incomplete
+adjacent pair are printed *before* the strict certification gate.  A failed
+baseline therefore remains a useful scientific result rather than an opaque CI
+failure.
 """
 from __future__ import annotations
 
@@ -54,7 +59,6 @@ def path_grid(points_per_segment: int):
     p = int(points_per_segment)
     if p < 3:
         raise ValueError("points_per_segment must be >= 3")
-    # Three equal segments, shared endpoints only once.
     mg = np.linspace(0.0, 1.0, p)
     gx = np.linspace(1.0, 2.0, p)[1:]
     xm = np.linspace(2.0, 3.0, p)[1:]
@@ -65,22 +69,20 @@ def event_signature(layer):
     return tuple((float(m.omega_norm), int(m.multiplicity)) for m in layer.modes)
 
 
-def assert_same_M_endpoints(graph, tol: float = 5e-5):
+def compare_M_endpoints(graph, tol: float = 5e-5):
     left = event_signature(graph.layers[0])
     right = event_signature(graph.layers[-1])
     if len(left) != len(right):
-        raise AssertionError(f"M endpoint event counts differ: {len(left)} vs {len(right)}")
+        return False, np.inf, f"event counts differ: {len(left)} vs {len(right)}"
     max_drift = 0.0
     for j, ((wl, ml), (wr, mr)) in enumerate(zip(left, right)):
         if ml != mr:
-            raise AssertionError(f"M endpoint multiplicity mismatch at event {j}: {ml} vs {mr}")
+            return False, np.inf, f"multiplicity mismatch at event {j}: {ml} vs {mr}"
         drift = abs(wl - wr)
         max_drift = max(max_drift, drift)
         if drift > tol:
-            raise AssertionError(
-                f"M endpoint frequency mismatch at event {j}: {wl:.9f} vs {wr:.9f}"
-            )
-    return max_drift
+            return False, max_drift, f"frequency mismatch at event {j}: {wl:.9f} vs {wr:.9f}"
+    return True, max_drift, "ok"
 
 
 def high_symmetry_index(points_per_segment: int, label: str) -> int:
@@ -95,6 +97,56 @@ def segment_metrics(graph, start: int, stop: int):
     scores = np.asarray([e.modal_score for e in edges], dtype=float)
     jumps = np.asarray([e.delta_omega_norm for e in edges], dtype=float)
     return float(np.min(scores)), float(np.max(jumps)), len(edges)
+
+
+def print_complete_spectrum(kp, graph):
+    print("\ncomplete layer spectrum")
+    print("-" * 112)
+    print("format: LAYER layer_index k_over_pi event_index omega_norm multiplicity residual")
+    for i, layer in enumerate(graph.layers):
+        if not layer.modes:
+            print(f"LAYER {i:02d} {kp[i]:.9f} EMPTY")
+            continue
+        for j, mode in enumerate(layer.modes):
+            print(
+                f"LAYER {i:02d} {kp[i]:.9f} {j:02d} "
+                f"{mode.omega_norm:.12f} {mode.multiplicity:d} {mode.root.sigma_min:.6e}"
+            )
+
+
+def print_incomplete_pairs(kp, graph):
+    print("\nincomplete adjacent pairs")
+    print("-" * 112)
+    bad = 0
+    for pair in graph.pairs:
+        su = int(sum(pair.transport.source_unmatched))
+        tu = int(sum(pair.transport.target_unmatched))
+        forward = [d for d in pair.forward_diagnostics if d.needs_refinement]
+        backward = [d for d in pair.backward_diagnostics if d.needs_refinement]
+        if pair.complete_bidirectionally and su == 0 and tu == 0:
+            continue
+        bad += 1
+        i = pair.left_index
+        print(
+            f"PAIR {i:02d}->{i+1:02d} k/pi={kp[i]:.9f}->{kp[i+1]:.9f} "
+            f"complete={pair.complete_bidirectionally} source_unmatched={pair.transport.source_unmatched} "
+            f"target_unmatched={pair.transport.target_unmatched}"
+        )
+        for d in forward:
+            print(
+                f"  FORWARD source_event={d.source_index} m={d.source_multiplicity} "
+                f"candidates={d.candidate_indices} union_dim={d.union_dimension} "
+                f"coverage={d.coverage:.6f}"
+            )
+        for d in backward:
+            print(
+                f"  BACKWARD source_event={d.source_index} m={d.source_multiplicity} "
+                f"candidates={d.candidate_indices} union_dim={d.union_dimension} "
+                f"coverage={d.coverage:.6f}"
+            )
+    if bad == 0:
+        print("none")
+    return bad
 
 
 def main():
@@ -142,13 +194,8 @@ def main():
         total_unmatched += int(sum(pair.transport.target_unmatched))
     print(f"total_unmatched_modal_dimensions={total_unmatched}")
 
-    if not graph.stabilised or not graph.complete_under_policy:
-        raise SystemExit("global modal graph did not certify")
-    if total_unmatched != 0:
-        raise SystemExit(f"global graph contains {total_unmatched} unmatched modal dimensions")
-
-    m_closure = assert_same_M_endpoints(graph)
-    print(f"M_endpoint_max_frequency_drift={m_closure:.3e}")
+    print_complete_spectrum(kp, graph)
+    bad_pairs = print_incomplete_pairs(kp, graph)
 
     p = args.points_per_segment
     special = {
@@ -180,13 +227,27 @@ def main():
             f"max_adjacent_dw={max_jump:.6f}"
         )
 
-    # The Gamma doublet is a key regression target of the new pipeline.
+    m_ok, m_closure, m_message = compare_M_endpoints(graph)
+    print(f"\nM_endpoint_closure={m_ok} max_frequency_drift={m_closure:.3e} detail={m_message}")
+
     gamma = graph.layers[special["Gamma"]]
     doublets = [m for m in gamma.modes if m.multiplicity == 2 and abs(m.omega_norm - 1.06458) < 5e-3]
-    if len(doublets) != 1:
-        raise SystemExit(f"expected one certified Gamma doublet, found {len(doublets)}")
+    gamma_doublet_ok = len(doublets) == 1
+    print(f"Gamma_doublet_ok={gamma_doublet_ok} count={len(doublets)}")
 
-    print("\nPASS: first integrated certified baseline closes on M-Gamma-X-M")
+    certified = (
+        graph.stabilised
+        and graph.complete_under_policy
+        and total_unmatched == 0
+        and bad_pairs == 0
+        and m_ok
+        and gamma_doublet_ok
+    )
+    print(f"\nBASELINE_CERTIFIED={certified}")
+    if not certified:
+        raise SystemExit("global modal graph did not certify; diagnostics printed above")
+
+    print("PASS: first integrated certified baseline closes on M-Gamma-X-M")
 
 
 if __name__ == "__main__":

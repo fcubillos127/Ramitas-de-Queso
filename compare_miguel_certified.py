@@ -1,32 +1,16 @@
 """Compare Miguel's raw historical full-grid solver with the certified psi=0 baseline.
 
-The comparison is deliberately made *before* postprocess_miguel.  The question
+The comparison is deliberately made *before* postprocess_miguel. The question
 is not whether heuristics can make the historical output look cleaner, but what
 zeros_longitudinal_fullgrid itself returns on the same physical problem.
 
-Inputs
-------
-A directory produced by certified_bands.py containing bandas.csv and
-conexiones.csv.
-
-Outputs
--------
-original_raw.csv
-    Every finite point returned by zeros_longitudinal_fullgrid in the reported
-    spectral window, including its residual when re-evaluated with the
-    certified secular matrix.
-comparison.csv
-    One row per original point with nearest/matched certified event information.
-missing_certified.csv
-    Certified modal dimensions for which the raw historical solver supplied no
-    frequency within the matching tolerance at the same k.
-comparacion_overlay.png
-    Raw historical points and certified spectral events on the same axes.
-comparacion_resumen.json
-    Machine-readable counts and parameters.
-
-This script does not run the historical post-processing layer and does not
-silently repair its output.
+Matching is capacity-aware in the following minimal sense: certified events are
+expanded by their geometric multiplicity, and only frequency pairs inside the
+explicit matching tolerance are admissible.  The assignment then maximises the
+number of admissible one-to-one matches before minimising frequency distance.
+This prevents a distant raw candidate from stealing a certified event from a
+nearly coincident raw root merely because that lowers the unconstrained global
+Hungarian cost.
 """
 from __future__ import annotations
 
@@ -135,6 +119,36 @@ def extract_original_points(red: Red, config: BandRunConfig):
     return rows
 
 
+def gated_frequency_assignment(local_original, local_cert, match_tol: float):
+    """Maximum-cardinality admissible frequency match, then minimum distance.
+
+    Hungarian assignment normally minimises total distance even for pairs that
+    will later be rejected by a tolerance gate.  Such invalid pairs can alter
+    which otherwise-valid edges are selected.  Give every invalid edge a very
+    large common penalty *before* solving, so the optimiser first retains as
+    many admissible edges as possible; among those it minimises real distance.
+    """
+    no = len(local_original)
+    nc = len(local_cert)
+    if no == 0 or nc == 0:
+        return tuple()
+
+    distance = np.abs(
+        np.asarray([r["omega_norm"] for r in local_original], dtype=float)[:, None]
+        - np.asarray([r["omega_norm"] for r in local_cert], dtype=float)[None, :]
+    )
+    tol = float(match_tol)
+    penalty = max(1.0, 1000.0 * max(tol, np.finfo(float).eps))
+    constrained_cost = np.where(distance <= tol, distance, penalty)
+    ri, ci = linear_sum_assignment(constrained_cost)
+    accepted = []
+    for i, j in zip(ri, ci):
+        delta = float(distance[i, j])
+        if delta <= tol:
+            accepted.append((int(i), int(j), delta))
+    return tuple(accepted)
+
+
 def compare_at_common_k(original, certified, match_tol: float):
     comparisons = []
     missing = []
@@ -145,23 +159,9 @@ def compare_at_common_k(original, certified, match_tol: float):
     for ik, local_original in sorted(original_by_ik.items()):
         kpi = local_original[0]["k_over_pi"]
         local_cert = expanded_certified_at_k(certified, kpi)
-        no = len(local_original)
-        nc = len(local_cert)
-        matched_o = set()
-        matched_c = set()
-        assignment = {}
-        if no and nc:
-            cost = np.abs(
-                np.asarray([r["omega_norm"] for r in local_original])[:, None]
-                - np.asarray([r["omega_norm"] for r in local_cert])[None, :]
-            )
-            ri, ci = linear_sum_assignment(cost)
-            for i, j in zip(ri, ci):
-                delta = float(cost[i, j])
-                if delta <= float(match_tol):
-                    matched_o.add(int(i))
-                    matched_c.add(int(j))
-                    assignment[int(i)] = (int(j), delta)
+        accepted = gated_frequency_assignment(local_original, local_cert, match_tol)
+        matched_c = {j for _i, j, _delta in accepted}
+        assignment = {i: (j, delta) for i, j, delta in accepted}
 
         for i, row in enumerate(local_original):
             nearest_delta = np.inf
@@ -316,6 +316,19 @@ def main():
 
     matched = sum(bool(r["matched_to_certified"]) for r in comparison)
     svd_ok = sum(bool(r["certified_svd_accepted_at_original_frequency"]) for r in comparison)
+    near_any = sum(
+        np.isfinite(r["nearest_certified_delta"])
+        and float(r["nearest_certified_delta"]) <= float(args.match_tol)
+        for r in comparison
+    )
+    unmatched_near = sum(
+        (not bool(r["matched_to_certified"]))
+        and np.isfinite(r["nearest_certified_delta"])
+        and float(r["nearest_certified_delta"]) <= float(args.match_tol)
+        for r in comparison
+    )
+    unmatched_far = len(comparison) - matched - unmatched_near
+
     summary = {
         "comparison_scope": "raw zeros_longitudinal_fullgrid before postprocess_miguel",
         "parameters": {
@@ -329,13 +342,16 @@ def main():
             "w_max": config.w_max,
         },
         "original_raw_points_in_window": len(original),
-        "original_points_matched_to_certified_within_tolerance": matched,
-        "original_points_unmatched_to_certified": len(comparison) - matched,
+        "original_points_one_to_one_matched_to_certified": matched,
+        "original_points_near_any_certified_within_tolerance": near_any,
+        "original_unmatched_but_near_certified_duplicate_or_overcount": unmatched_near,
+        "original_unmatched_and_far_from_any_certified_event": unmatched_far,
         "original_points_passing_dual_svd_at_their_returned_frequency": svd_ok,
         "certified_modal_dimensions_missing_from_original": len(missing),
         "note": (
-            "SVD rejection at the exact historical frequency can reflect either a false candidate "
-            "or inadequate root refinement; nearest certified delta in comparison.csv separates these cases."
+            "Near-but-SVD-rejected points can be inadequately refined historical roots. "
+            "Unmatched-near points are extra raw candidates competing for an already matched certified dimension. "
+            "Unmatched-far points have no certified counterpart within the declared tolerance."
         ),
     }
     (output_dir / "comparacion_resumen.json").write_text(

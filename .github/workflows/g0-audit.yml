@@ -1,0 +1,50 @@
+name: Numerical certification
+
+on:
+  pull_request:
+    branches:
+      - claude/code-review-optimization-49vxac
+
+concurrency:
+  group: numerical-certification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run numerical certification tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Produce certified baseline v1 outputs
+        run: >-
+          python certified_bands.py
+          --output-dir artifacts/certified_baseline_v1
+          --cut 4
+          --n-suma 40
+          --points-per-segment 9
+          --ngrid 110
+          --w-min 0.70
+          --w-max 1.40
+          --search-w-max 1.50
+      - name: Compare raw Miguel solver with certified baseline
+        run: >-
+          python compare_miguel_certified.py
+          --certified-dir artifacts/certified_baseline_v1
+          --output-dir artifacts/comparison_miguel_vs_certified
+          --nk 25
+          --nbands 8
+          --ventanas-por-unidad 100
+          --match-tol 0.01
+      - name: Upload integrated comparison artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-v1-and-miguel-comparison
+          path: artifacts/
+          if-no-files-found: warn

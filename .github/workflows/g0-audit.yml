@@ -21,15 +21,12 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run numerical certification tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Resolve M doublet with half-step k grid
+      - name: Run closed global baseline v1
         run: >-
-          python scripts_figs/audit_modal_path_gamma.py
+          python scripts_figs/audit_global_baseline_v1.py
           --n-suma 40
           --ngrid 110
-          --k-over-pi 0.0 0.0625 0.125
+          --points-per-segment 9
           --w-min 0.70
           --w-max 1.40
-          --half-width 0.08
-          --max-sweeps 3
-      - name: Certify upper X pair as joint modal cluster
-        run: python scripts_figs/audit_modal_cluster_x.py
+          --search-w-max 1.50
